@@ -955,7 +955,7 @@ static bool doentry(struct rule *rp,struct sentry *ep,ub1 *sp,ub1 *cp,ub2 len,bo
   for (si = 0; si < len; si++) {
     s = sp[si];
     z = cp[si];
-    islp = (z & Crepmask);
+    islp = (z & Crepmask) == Creplp;
     if (islp && len > 1 && si < len-1) serror(lnx,"rule %s: duplicate end of rep",rp->name);
     if (s >= T99_count && s <= T99_count + rulcnt) {
       if (islp) serror2(lnx,rp->id,s,"si %u +x repeat on nonterm",si);
@@ -2719,7 +2719,7 @@ static int wrfile(cchar *spec)
   myfprintf(&sfp,"#define R0n 0x%x\n",Crep0n);
   myfprintf(&sfp,"#define Rlp 0x%x\n",Creplp);
   myfprintf(&sfp,"#define R01 %u\n",1U << Crepshift);
-  for (i = 1; i <= higrpdif; i++) {
+  for (i = 2; i <= higrpdif; i++) {
     myfprintf(&sfp,"#define R0%u 0x%x\n",i,i << Crepshift);
   }
 
