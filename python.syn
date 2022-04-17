@@ -1,0 +1,241 @@
+# python.syn - syntax definitions for python language
+
+#  This file is part of Morelia, a subset of Python with emphasis on efficiency.
+
+#  Copyright © 2022 Joris van der Geer.
+
+#  Morelia is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU Affero General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+
+#  mpy is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+
+#  You should have received a copy of the GNU Affero General Public License
+#  along with this program, typically in the file License.txt
+#  If not, see <http://www.gnu.org/licenses/>.
+
+language python-3.0
+version 0.1.0
+author joris
+
+requires gensyn 0.1+
+
+# TODO preliminary test grammar
+
+table
+
+stmts
+  *stmt? +;
+
+stmt
+# assignment
+  ?tgtaslst = stryldexp
+
+  ?starexp
+#  yieldexp
+
+  Return starexp?
+#  imp_stmt
+  Pass
+#  Del targets
+  Break
+  Continue
+#  Glob_nl idlst
+
+#  If ?( Id := ?) expr : block ifelse
+#  class
+#  ?With ( with_items ) : block
+#  With with_items : block
+#  For star_tgts In starexp* : block elseblk?
+#  try
+  While ?( Id := ?) expr : block ?( Else : block ?)
+
+block
+  Ind stmts Ded
+  stmt
+
+tgtaslst
+  +tgtlst =
+
+tgtlst
+  +target +,
+
+target
+  ?Id `tgt_id
+  ((|[) tgtlst ()|]) `tgtlist
+  ?attref `tgt_ar
+  * target `startgt
+
+attref
+  primary . Id
+
+primary
+  atom
+
+stryldexp
+  starexp
+#  yieldexp
+
+# --- expressions ---
+
+starexp
+  Ast? expr
+
+#yieldexp
+#  Yield From expr
+#  Yield starexps
+
+atom
+  Id
+  Nlit
+  Slit
+  ( starexp )
+
+expr
+  atom ?( (Pm|Op)  expr ?)
+
+##
+
+staritem
+  asexp
+  Ast? expr
+
+starlst
+  *staritem +,
+
+atom
+  Id
+  Nlit
+  Slit
+#  ( starexp?`1 ) `parenex
+  [ starlst ]
+#  [ compr ]
+  { starlst }
+#  { compr }
+#  { kdlst }
+#  { dctcompr }
+
+# unex
+#   Pm? primex Pm?
+
+primex
+  atom
+
+binexp
+  *primex +(Pm|Op)`0 `binexp
+
+expr
+  *binexp
+
+asexp
+  ?( ?Id := ?) expr
+#  expr
+
+starexp
+  Ast Or
+  expr
+
+dot_name
+  *Id +.
+
+dot_as_names
+  *dot_name`1 ?( As Id ?) +, `dot_as_nam
+
+imp_fan
+  *Id ?( As Id ?) +,
+
+imp_from_tgts
+  ( imp_fan )
+  imp_fan
+  Ast
+
+imp_stmt
+  Import dot_as_names `imp_id_as
+  From .* dot_name Import imp_from_tgts `imp_from
+#  From .+ Import imp_from_tgts
+
+idlst
+  *Id +,
+
+# todo
+#t_prim
+#  As
+
+slice
+  expr1 : expr2 ?( : expr3 ?)
+  : expr1 ?( : expr2 ?)
+# named_expr
+
+slices
+  *slice +,
+
+del_tgt
+  ?As . Id
+  As [ slices ]
+  Id
+  ( del_tgts? )
+  [ del_tgts? ]
+
+del_tgts
+  *del_tgt +,
+
+# todo compare with del-tgt
+star_tgt
+  Ast
+  Id
+
+star_tgts
+  *star_tgt +,
+
+assignst
+  star_tgts = expr
+
+simple_stmt
+  ??Id assignst
+  ??Id starexp
+  Return starexp?
+  imp_stmt
+  Pass
+  Del del_tgts
+  Break
+  Continue
+  Glob_nl idlst
+
+simple_stmts
+  *simple_stmt +; # nl
+
+block
+  Ind stmts Ded
+  simple_stmts
+
+with_items
+  *expr ?( As star_tgt ?) +,
+
+ifelse
+  *Elif ?( Id := ?) expr : block
+  Else : block
+
+elseblk
+  Else : block
+
+cmp_stmt
+#  fndef
+  If ?( Id := ?) expr : block ifelse
+#  class
+  ?With ( with_items ) : block
+  With with_items : block
+  For star_tgts In starexp* : block elseblk?
+#  try
+  While ?( Id := ?) expr : block ?( Else : block ?)
+#  match
+
+stmt
+  cmp_stmt
+  simple_stmts
+
+toplevel
+  stmts
