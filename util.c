@@ -403,6 +403,7 @@ int readfile_pad(struct myfile *mf,const char *name, int mustexist,ub4 maxlen,ub
   fd = osopen(name);
   if (fd == -1) {
     if (mustexist) { oserrorfln(FLN,"cannot open %s",name); return 1; }
+    else return 0;
   }
   if (osfdinfo(&ino,fd)) { oserrorfln(FLN,"cannot get info for %s",name); osclose(fd); return 1; }
   mf->exist = 1;
@@ -459,12 +460,14 @@ int freefile(struct myfile *mf)
 int filebck(cchar *name)
 {
   char bck[Fname];
+  int rv = 0;
 
-  if (osexists(name)) {
+  if (osexists(name) == 1) {
     snprintf(bck,Fname,"%s.bck",name);
-    return osrename(name,bck);
+    rv = osrename(name,bck);
+    if (rv) oserror("cannot rename %s to %s",name,bck);
   }
-  return 0;
+  return rv;
 }
 
 #if 0

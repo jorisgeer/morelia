@@ -1186,6 +1186,7 @@ int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *l
 
   if (chksrcmfile(fb)) {
     info("skip duplicate %s ",path);
+    osclose(fd);
     return 0;
   }
 

@@ -724,7 +724,7 @@ ub4 myvsnprint(char *dst,ub4 pos,ub4 len,const char *fmt,va_list ap)
      if (prec > 1 && (spec == Sdec || spec == Oct || spec == Dec || spec == Hex)) {
        if (prec > flen) {
           slen = prec - flen;
-          if (slen < flen) { memset(org - slen,'0',slen); org -= slen; }
+          if (slen < flen) { do *--org = '0'; while (--slen); }
         }
      }
 

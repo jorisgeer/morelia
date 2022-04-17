@@ -88,9 +88,11 @@ Noret void doexit(int code)
 
 int oscreate(const char *name)
 {
-  int fd = open(name,O_CREAT|O_RDWR|O_TRUNC,0644);
+  int rv,fd = open(name,O_CREAT|O_RDWR|O_TRUNC,0644);
   if (fd == -1) return fd;
-  posix_fadvise(fd,0,0,POSIX_FADV_SEQUENTIAL);
+
+  rv = posix_fadvise(fd,0,0,POSIX_FADV_SEQUENTIAL);
+  if (rv) warning("fadvise returned %d for %s",rv,name);
   return fd;
 }
 
@@ -216,7 +218,7 @@ int oswrite8(int fd, const char *buf,size_t len,unsigned long *nwrit)
   while (len) {
     if (fd > 2 && globs.sigint) return 1;
     chk = min(len,1024UL * 1024 * 1024);
-    do rrx = write(fd,buf,chk); while (rx == -1 && errno == EINTR);
+    do rrx = write(fd,buf,chk); while (rrx == -1 && errno == EINTR);
     if (rrx == -1) return -1;
     else if (rrx == 0) return 1;
     nw += (size_t)rrx;
@@ -236,7 +238,7 @@ int osread8(int fd,char *buf,size_t len,unsigned long *nread)
   while (len) {
     if (globs.sigint) return 1;
     chk = min(len,1024UL * 1024 * 1024);
-    do rrx = read(fd,buf,chk); while (rx == -1 && errno == EINTR);
+    do rrx = read(fd,buf,chk); while (rrx == -1 && errno == EINTR);
     if (rrx == -1) return -1;
     else if (rrx == 0) return 1;
     nr += (size_t)rrx;

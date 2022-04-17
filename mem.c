@@ -334,7 +334,7 @@ void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter
     fatal(fln,"exceeding %u MB limit by %u %s",Maxmem_mb,nm,desc);
   }
   totalmb = totalkb >> 10;
-  if (Maxmem_mb && (totalmb) + nm >= Maxmem_mb) {
+  if (Maxmem_mb && totalmb + nm >= Maxmem_mb) {
     fatal(fln,"exceeding %u MB limit by %u+%u=%u MB %s",Maxmem_mb,totalmb,nm,nm + totalmb,desc);
   }
 

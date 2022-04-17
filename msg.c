@@ -329,15 +329,12 @@ void msglog(cchar *fnam,cchar *fext,cchar *desc)
 
   fmtstring(path,"%s.%s",fnam,fext);
 
-  if (osexists(path)) {
-    fmtstring(bckpath,"%s.bck",path);
-    osrename(path,bckpath);
-  }
+  filebck(path);
 
   info("emitting %s intermediate code in %s",desc,path);
   flsbuf();
   logfd = oscreate(path);
-  if (logfd == -1) { warning("cannot create %s: %m",path); return; }
+  if (logfd == -1) { oserror("cannot create %s: %m",path); return; }
   orgopts = msgopts;
   x = (ub1)msgopts & ~ (ub1)(Msg_shcoord|Msg_tim);
   msgopts = (enum Msgopts)x;
