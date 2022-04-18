@@ -73,6 +73,8 @@ static ub4 msgfile = Shsrc_os;
 
 #include "os.h"
 
+ub4 ospagesize = 4096; // default
+
 #undef fatal
 #define fatal(fln,fmt,...) fatalfln(FLN,fln,hi32,fmt,__VA_ARGS__)
 
@@ -106,7 +108,7 @@ int osopen(const char *name)
 int osopenseq(const char *name,int *pfd)
 {
   int e;
-  int fd = open(name,O_RDONLY);
+  int rv,fd = open(name,O_RDONLY);
 
   *pfd = fd;
   if (fd == -1) {
@@ -115,7 +117,8 @@ int osopenseq(const char *name,int *pfd)
     oserror("cannot open %s",name);
     return -1;
   }
-  posix_fadvise(fd,0,0,POSIX_FADV_SEQUENTIAL);
+  rv = posix_fadvise(fd,0,0,POSIX_FADV_SEQUENTIAL);
+  if (rv) warning("fadvise returned %d for %s",rv,name);
   return 0;
 }
 
@@ -560,18 +563,15 @@ ub8 gettime_usec(void)
 // physical mem in mb
 ub4 osmeminfo(void)
 {
-#if (defined _SC_PHYS_PAGES) && (defined _SC_PAGESIZE)
+#ifdef _SC_PHYS_PAGES
 
-  ub8 pagesize,pagecnt,mb;
+  ub8 pagecnt,mb;
   long lval;
 
-  lval = sysconf(_SC_PAGESIZE);
-  if (lval < 1024) return 0;
-  pagesize = (ub8)lval;
   lval = sysconf(_SC_PHYS_PAGES);
-  if (lval < 1024) return 0;
+  if (lval < 1) return 0;
   pagecnt = (ub8)lval;
-  mb = (pagesize * pagecnt) >> 20;
+  mb = (ospagesize * pagecnt) >> 20;
   return (ub4)mb;
 #else
   return 0;
@@ -618,6 +618,14 @@ static void showvmstat(void)
 int inios(void)
 {
   globs.pid = getpid();
+
+#ifdef _SC_PAGESIZE
+  long lval;
+
+  lval = sysconf(_SC_PAGESIZE);
+  if (lval < 1) return 0;
+  ospagesize = (ub4)lval;
+#endif
 
   return 0;
 }

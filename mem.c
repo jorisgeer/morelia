@@ -44,6 +44,11 @@ static const ub4 mmap_thres = 65536;
 
 static const ub4 mini_thres = 1024;
 
+static const ub4 maxalign = 16;
+static const ub4 stdalign = 8;
+
+static ub4 pagemask;
+
 static ub2 aihshbit  = 9;
 static ub4 aihshlen  = 512;
 static ub4 aihshmask = 511;
@@ -57,7 +62,7 @@ static ub2 elsizes[Memdesc * Shsrc_count];
 
 struct ainfo {
   void *ptr;
-  ub4 nelem;
+  // ub4 nelem;
   ub2 allocanchor;
   ub2 freeanchor;
 };
@@ -77,30 +82,6 @@ static void subsum(ub4 b)
   ub4 kb = b >> 10;
 
   totalkb -= min(kb,totalkb);
-}
-
-static int isasan(void)
-{
-#if defined(__clang__) && defined(__clang_major__) && defined(__clang_minor__)
-
- #ifdef __has_feature
-  #if __has_feature(address_sanitizer)
-   return 1;
-  #else
-   return 0;
-  #endif
- #endif
-
-#elif defined(__GNUC__) && defined(__GNUC_MINOR__)
-
-  #ifdef __SANITIZE_ADDRESS__
-   return 1;
-  #else
-   return 0;
-  #endif
-#else
-  return 0;
-#endif
 }
 
 // Thomas Wang 64 bit integer hash
@@ -125,7 +106,6 @@ static ub4 align4(ub4 x,ub4 a)
   ub4 r;
 
   if (a == 0) ice(FLN,hi32,"zero align for %u",x);
-  else if (a >= 128) warning("align %u",a);
   r = x & ~(a-1);
 
   return (r == x ? r : r + a);
@@ -147,17 +127,13 @@ void *minalloc_fln(ub4 fln,ub4 n,ub2 align,ub2 fill)
 
   if (align == 0) {
     vrbfln(fln,"mem.%u minalloc %u align 0 = 16",__LINE__,n);
-    align = 16;
+    align = stdalign;
   }
 
   if (n >= Minchk || n + align >= Minchk) fatal(fln,"not mini %u",n);
   else if (mintot + n > Minmax) fatal(fln,"mini pool exceeds %u MB",Minmax >> 20);
-  else if (minpos + n > 1U << 20) {
-    warning("mini pool %u + %u exceeds %u",minpos,n,1U << 20);
-    minpool = nil;
-    minpos = 0;
-  }
-  minpos = align4(minpos,align);
+
+  minpos = align4(minpos+1,align);
   if (minpool == nil) inc = Minchk;
   else if (minpos + n >= mintop) {
     inc = (n < Minchk ? Minchk : Minchk * 2);
@@ -165,7 +141,7 @@ void *minalloc_fln(ub4 fln,ub4 n,ub2 align,ub2 fill)
   if (inc) {
     vrb("mmap %u",inc);
     minpool = osmmap(inc,ub1);
-    minpos = 0;
+    minpos = 2 * maxalign;
     mintop = inc;
     mintot += inc;
     addsum(inc);
@@ -189,7 +165,7 @@ void *medalloc_fln(ub4 fln,ub4 n,ub2 align)
 
   if (n >= (1U << 26)) fatal(fln,"medalloc %u`B",n);
 
-  medpos = align4(medpos,align);
+  medpos = align4(medpos+1,align);
   if (medpool == nil || medpos + n >= medchk) {
     if (medchk <= (1U << 20)) medchk++;
     nn = max(medchk,n);
@@ -197,7 +173,7 @@ void *medalloc_fln(ub4 fln,ub4 n,ub2 align)
     medchk = nxpwr2(nn,&bit);
     if (medchk > (1U << 22)) warnfln(fln,"mem.%u medalloc chunk %u`B",__LINE__,medchk);
     medpool = osmmap(medchk,ub1);
-    medpos = 0;
+    medpos = 2 * maxalign;
     addsum(medchk);
   }
   p = (ub1 *)medpool + medpos;
@@ -244,6 +220,8 @@ static struct ainfo *putai(void *p)
     aiuse++;
     return ai;
   } else if (ai->ptr == p) return ai;
+  if (aiuse == aihshlen) return nil;
+
   hsh2 = (hsh8 >> aihshbit) & aihshmask;
   pos = (hsh + hsh2) & aihshmask;
   ai = aitab + pos;
@@ -262,37 +240,9 @@ static struct ainfo *putai(void *p)
       return ai;
     } else if (ai->ptr == p) return ai;
   } while (pos != pos0);
-  warning("adr info table size %u full: not releasing",aihshlen);
+  info("adr info table size %u full: not releasing",aihshlen);
+  aiuse = aihshlen;
   return nil;
-}
-
-static void growai(void)
-{
-  struct ainfo *ai,*newai,*orgtab;
-  ub4 o;
-
-  ub4 orghshlen = aihshlen;
-  orgtab = aitab;
-
-  aihshlen <<= 1;
-  aihshbit++;
-  aihshmask = aihshlen-1;
-  aiuse = 0;
-
-  info("grow adrinfo %u",aihshlen);
-  aitab = osmmap(aihshlen,struct ainfo);
-  addsum(aihshlen * sizeof(struct ainfo));
-
-  for (o = 0; o < orghshlen; o++) {
-    ai = orgtab + o;
-    if (ai->ptr == nil) continue;
-    newai =  putai(ai->ptr);
-    if (newai == nil) continue;
-    newai->nelem = ai->nelem;
-    newai->freeanchor = ai->freeanchor;
-    newai->allocanchor = ai->allocanchor;
-  }
-  if (orghshlen >= 512) osmunmap(orgtab,orghshlen * sizeof(struct ainfo));
 }
 
 static void iniai(void)
@@ -302,15 +252,15 @@ static void iniai(void)
 
 void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter)
 {
-  ub8 n8;
-  ub4 n,nm,totalmb;
-  void *p;
+  ub8 n8,x8;
+  ub4 n,nn,na,nm,totalmb,align = min(elsiz,maxalign);
+  ub1 *p;
   struct ainfo *ai;
   ub2 allan,mod;
 
   if (desc == nil) desc = "";
 
-  vrb("+alloc %u * %u %s",nelem,elsiz,desc);
+  vrb("+alloc %u * %u @%u %s",nelem,elsiz,align,desc);
 
   // check for zero
   if (nelem == 0) fatal(fln,"zero elems for %s",desc);
@@ -319,41 +269,51 @@ void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter
   else if (elsiz == hi32) fatal(fln,"4G elsize for %s",desc);
   else if (elsiz > hi16) fatal(fln,"64KB+ elsize for %s",desc);
 
-  n8 = (ub8)nelem * (ub8)elsiz;
+  n8 = (ub8)nelem * elsiz;
   if (n8 >= hi32) fatal(fln,"%u` * %u` = 4GB+ for %s",nelem,elsiz,desc);
   n = (ub4)n8;
 
   if (n < mini_thres) {
-    p = minalloc_fln(fln,n,min(elsiz,8),fil);
+    p = minalloc_fln(fln,n,align,fil);
     return p;
   }
 
   nm = n >> 20;
 
-  if (Maxmem_mb && nm >= Maxmem_mb) {
+  if (nm >= Maxmem_mb) {
     fatal(fln,"exceeding %u MB limit by %u %s",Maxmem_mb,nm,desc);
   }
   totalmb = totalkb >> 10;
-  if (Maxmem_mb && totalmb + nm >= Maxmem_mb) {
+  if (totalmb + nm >= Maxmem_mb) {
     fatal(fln,"exceeding %u MB limit by %u+%u=%u MB %s",Maxmem_mb,totalmb,nm,nm + totalmb,desc);
   }
 
-  if (n >= mmap_thres) {
-    infofln(fln,"mem.%u Alloc %u`B %s",__LINE__,n,desc);
-    p = osmmap(n,char);
-    if (!p) fatal(fln,"cannot alloc %u`B, total %u MB for %s: %m",n,totalmb,desc);
+  nn = align4(n+4,align);
+  if (nn >= mmap_thres) {
+    na = align4(nn,ospagesize);
+    infofln(fln,"mem.%u Alloc %u`B %s",__LINE__,na,desc);
+    p = osmmap(na,ub1);
+    if (!p) fatal(fln,"cannot alloc %u`B, total %u MB for %s: %m",na,totalmb,desc);
+    *(ub4 *)p = na;
+    p += align4(4,align);
     if (fil == 0) fil = Mo_nofill;
   } else {
+    nn = align4(n+1,align);
+    na = nn + maxalign + align;
     vrbfln(fln,"mem.%u alloc %u`B %s",__LINE__,n,desc);
-    p = malloc(n);
+    p = malloc(na);
     if (!p) fatal(fln,"cannot alloc %u`B, total %u MB for %s: %m", n,totalmb,desc);
+    x8 = (ub8)p & pagemask;
+    if (x8 <= maxalign) p = (ub1 *)(~x8 + maxalign + align); // note - not freed
+    else {
+      *p = 0xff;
+      p += align4(1,align);
+    }
   }
 
   if (fil < Mo_nofill) memset(p,fil,n);
 
-  addsum(n);
-
-  if (aiuse * 2 >= aihshlen) growai();
+  addsum(na);
 
   ai = getai(p);
   if (ai == nil) ai = putai(p);
@@ -368,7 +328,6 @@ void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter
 
   ai->allocanchor = allan;
   ai->freeanchor = hi16;
-  ai->nelem = nelem;
 
   return p;
 }
@@ -376,46 +335,55 @@ void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter
 void afree_fln(ub4 fln,void *p,const char *desc,ub2 counter)
 {
   struct ainfo *ai;
-  ub4 nelem,elsiz;
+  ub4 nelem,elsiz,ofs;
   ub4 n;
+  ub8 x8;
   ub2 allan,freean,anchor,mod;
+  ub1 x;
 
   if (desc == nil) desc = "";
 
   if (!p) { errorfln(fln,FLN,"free nil pointer for %s",desc); return; }
 
-  ai = getai(p);
-  if (ai == nil) return; // e.g. minalloc
-
-  freean = ai->freeanchor;
-  allan = ai->allocanchor;
-  elsiz = elsizes[allan];
-  nelem = ai->nelem;
-
-  if (freean != hi16) {
-    infofln(flns[freean],"mem.%u location of previous free",__LINE__);
-    errorfln(fln,FLN,"double free of pointer %p '%s'",p,desc);
-    infofln(flns[allan],"mem.%u location of allocation '%s'",__LINE__,descs[allan]);
-    return;
+  x8 = (ub8)p & pagemask;
+  if (x8 > maxalign) { // malloc or min/med
+    x = *(ub1 *)(p-1);
+    if (x == 0) return; // min/med
+    else if (x != 0xff) fatal(fln,"free of unknown ptr type %x %p",x,p);
   }
 
-  mod = fln >> 16;
-  anchor = mod * Memdesc + counter;
-  descs[anchor] = desc;
-  flns[anchor] = fln;
-  elsizes[anchor] = elsiz;
+  ai = getai(p);
+  if (ai) { // minalloc or full ai
+    freean = ai->freeanchor;
+    allan = ai->allocanchor;
+    elsiz = elsizes[allan];
 
-  ai->freeanchor = anchor;
+    if (freean != hi16) {
+      infofln(flns[freean],"mem.%u location of previous free",__LINE__);
+      errorfln(fln,FLN,"double free of pointer %p '%s'",p,desc);
+      infofln(flns[allan],"mem.%u location of allocation '%s'",__LINE__,descs[allan]);
+      return;
+    }
 
-  n = nelem * elsiz;
+    mod = fln >> 16;
+    anchor = mod * Memdesc + counter;
+    descs[anchor] = desc;
+    flns[anchor] = fln;
+    elsizes[anchor] = elsiz;
+    ai->freeanchor = anchor;
+  }
 
-  if (n >= mmap_thres) {
+  x8 = (ub8)p & pagemask;
+  ofs = (ub4)x8;
+  if (ofs <= maxalign) { // must be mmap()
+    x8 = ~x8;
+    p = (void *)x8;
+    n = *(ub4 *)p;
     osmunmap(p,n);
-  } else {
+    subsum(n);
+  } else if (ai && ofs > 2 * maxalign) {
     free(p);
   }
-
-  subsum(n);
 }
 
 void *allocset_fln(ub4 fln,struct mempart *parts,ub2 npart,ub2 fil,const char *desc,ub2 counter)
@@ -455,8 +423,7 @@ void achkfree(void)
 {
   struct ainfo *ai;
   ub4 andx,n = 0;
-  ub4 b = 0;
-  ub4 x,y;
+  ub4 y;
   ub2 allan;
 
   for (andx = 0; andx < aihshlen; andx++) {
@@ -464,15 +431,13 @@ void achkfree(void)
     if (ai->ptr && ai->freeanchor == hi16) {
       allan = ai->allocanchor;
       n++;
-      x = ai->nelem;
       y = elsizes[allan];
-      warnfln(flns[allan],"mem.%u not freed %u` * %u` '%s'",__LINE__,x,y,descs[allan]);
-      b += x * y;
+      warnfln(flns[allan],"mem.%u not freed n * %u` '%s'",__LINE__,y,descs[allan]);
     }
   }
   if (n == 0) return;
 
-  info("%u`B in %u blocks not freed",b,n);
+  info("%u blocks not freed",n);
 }
 
 ub1 *blkexp_fln(ub4 fln,struct expmem *xp,ub4 cnt,ub4 typsiz)
@@ -535,7 +500,10 @@ ub4 meminfo(void) { return osmeminfo(); }
 
 void memcfg(ub4 maxvm)
 {
-  if (isasan()) infofln(FLN,"no soft VM limit in asan");
+#ifdef Asan
+  infofln(FLN,"no soft VM limit in asan");
+  return;
+#endif
 
   info("setting soft VM limit to %u GB",maxvm);
 //  Maxmem_mb = (maxvm == hi24 ? hi32 : maxvm * 1024);
@@ -544,6 +512,8 @@ void memcfg(ub4 maxvm)
 void inimem(void)
 {
   iniai();
+
+  pagemask = ospagesize - 1;
 }
 
 void eximem(bool show)

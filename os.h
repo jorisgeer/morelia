@@ -77,3 +77,5 @@ extern ub4 osmeminfo(void);
 
 extern int inios(void);
 extern void exios(bool show);
+
+extern ub4 ospagesize;

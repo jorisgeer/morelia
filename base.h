@@ -106,6 +106,12 @@ typedef const char cchar;
  #pragma clang diagnostic ignored "-Wpointer-sign"
  #pragma clang diagnostic ignored "-Wempty-translation-unit"
 
+ #ifdef __has_feature
+  #if __has_feature(address_sanitizer)
+   #define Asan
+  #endif
+ #endif
+
 #elif defined __GNUC__
  #define Packed8 __attribute__((packed))
  #define Fallthrough __attribute__ ((fallthrough));
@@ -125,6 +131,10 @@ typedef const char cchar;
  #pragma GCC diagnostic error "-Wimplicit-function-declaration"
  #pragma GCC diagnostic error "-Wmissing-field-initializers"
  #pragma GCC diagnostic error "-Wvla"
+
+ #ifdef __SANITIZE_ADDRESS__
+  #define Asan
+ #endif
 
 #else
  #define Packed8

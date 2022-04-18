@@ -513,6 +513,7 @@ void myfopen(struct bufile *f,ub4 len,bool perm)
   ub1 bit;
 
   len = nxpwr2(min(len,1U << 20),&bit);
+  if (len > 16) len -= 16;
   f->mid = len;
 
   len *= 2;
@@ -715,19 +716,9 @@ static void show_version(bool full)
 
   pos += mysnprintf(buf,pos,len,"clang %u.%u",__clang_major__,__clang_minor__);
 
- #ifdef __has_feature
-  #if __has_feature(address_sanitizer)
-    pos += mysnprintf(buf,pos,len," +asan");
-  #endif
- #endif
-
 #elif defined __GNUC__ && defined __GNUC_MINOR__
 
   pos += mysnprintf(buf,pos,len,"gcc %u.%u",__GNUC__,__GNUC_MINOR__);
-
-  #ifdef __SANITIZE_ADDRESS__
-    pos += mysnprintf(buf,pos,len," +asan");
-  #endif
 
   #ifdef __CET__
     pos += mysnprintf(buf,pos,len," +cfp");
@@ -736,6 +727,10 @@ static void show_version(bool full)
 #else
   fmtstring(ccstr,"unknown compiler");
 #endif
+
+ #ifdef Asan
+    pos += mysnprintf(buf,pos,len," +asan");
+ #endif
 
  }
 
