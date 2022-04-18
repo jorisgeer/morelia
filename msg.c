@@ -492,7 +492,7 @@ void __attribute__ ((format (printf,3,4))) genmsgfln(ub4 fln,enum Msglvl lvl,con
 
   msginfo(fln);
 
-  if (msglvl < lvl && lvl < Nolvl) return;
+  if (msglvl < lvl) return;
 
   va_start(ap, fmt);
   msg(fln,lvl,nil,0,0,fmt,ap);

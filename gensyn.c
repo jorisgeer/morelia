@@ -586,7 +586,7 @@ static bool addsec(struct rule *rp,enum Token t)
         s = sp[t1];
         if ( (fp[t1] & abit) == 0 || (s & tbit)) continue;
         sp[t1] |= tbit;
-        chg |= 1;
+        chg = 1;
       }
     }
   }
@@ -1181,7 +1181,6 @@ static int mktables(void)
         rx = s - T99_count;
         rxp = rules + rx;
         xfp = rxp->first0;
-        xsp = rxp->second + (a * Nsi + si) * T99_count;
 
         if (rxp->rulrep) {
           nosingle = 1;
@@ -1209,8 +1208,6 @@ static int mktables(void)
         tr = tra & 0xff;
         ta = tra >> 8;
         ose = stp[tk];
-
-//        xsp = rxp->second + (a * Nsi + si) * T99_count;
 
         if (tnc == 1) { // dirtok
           rxp = rules + tr;
@@ -1449,6 +1446,7 @@ static enum Specvar getvar(ub2 lno,cchar *src,ub2 nam0,ub2 nam1)
 {
   ub2 namlen,nlen;
   enum Specvar sv,sv2;
+  enum Msglvl lvl = Warn;
   cchar *p;
   char *q;
 
@@ -1463,8 +1461,19 @@ static enum Specvar getvar(ub2 lno,cchar *src,ub2 nam0,ub2 nam1)
 
   if (sv == Sv_table) {
     for (sv2 = 0; sv2 < Sv_count; sv2++) {
-      if (sv != Sv_table && svfpos[sv2] == 0) {
-        serrorfln(FLN,lno|Lno,"var %s undefined",svnames[sv2]);
+      if (svfpos[sv2] == 0) {
+        switch (sv2) {
+        case Sv_start:    lvl = Error; break;
+        case Sv_date:     lvl = Vrb; break;
+        case Sv_nodes:
+        case Sv_version:
+        case Sv_author:
+        case Sv_requires: lvl = Info; break;
+        case Sv_lang:     lvl = Warn; break;
+        case Sv_table:    lvl = Nolvl; break;
+        case Sv_count: break;
+        }
+        genmsg(lvl,"var %s undefined",svnames[sv2]);
       }
     }
     if (*speclang == 0) {
@@ -1780,7 +1789,7 @@ static int rdspec(cchar *fname,const ub1 *src)
       tk = gettoken(src+idnam0,idnlen);
       if (tk == T99_count) serror(n,"unknown token '%.*s'",idnlen,src+idnam0);
       if (dorng) {
-        for (tk2 = T99_kwd; tk2 < tk; tk++) tkdefarg[tk2] = 1;
+        for (tk2 = T99_kwd; tk2 < tk; tk2++) tkdefarg[tk2] = 1;
       } else tkdefarg[tk] = 1;
       if (t == Cnl) st = Snodes;
       else { nxst = Snodes; st = Scmt; }

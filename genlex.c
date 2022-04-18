@@ -652,9 +652,8 @@ static ub2 addmasks(ub2 tti,ub1 *sp,enum Ctl *cp,ub1 len)
       case Cc_x: ti = addotmask(tti,p); if (ti != hi16) hiti = ti; break;
       case Cc_e: return hi16;
       case Cc_z: ti = p[0]; if (ti != hi16) hiti = ti; else p[0] = tti; break;
-      case Cc_a: ti = p[s]; if (ti != hi16) hiti = ti; else { p[s] = tti; new = 1; }
-                 ti = p[s] & 0xdf; if (ti != hi16) hiti = ti; else { p[s] = tti; new = 1; }
-                 if (new) ti = hi16; else ti = hiti;
+      case Cc_a: ti = p[s]; if (ti == hi16) { p[s] = tti; break; }
+                 else { ti = p[s] & 0xdf; hiti = ti; }
                  break;
     }
     if (ti == hi16) break;
@@ -3053,7 +3052,6 @@ static int wrfile(void)
           tp->tswitch = 1;
           bpos += mysnprintf(buf,bpos,blen,"&&lx_error_%u_%c,%s marked ",tp->ln,passc,ctuval);
         } else {
-          if (tp == nil) err(tp0,st0,"invalid tp for %u",t);
           tp->tswitch = 1;
           if (tp->eof) bpos += mysnprintf(buf,bpos,blen,"&&lx%c_eof",passc);
           else bpos += mysnprintf(buf,bpos,blen,"&&lx%c_%.*s",passc,stlens[st],states[st]); // destination
