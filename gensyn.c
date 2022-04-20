@@ -127,8 +127,8 @@ struct rule {
   ub1 desc[Nalt * Dsclen];
   ub2 dsclen[Nalt];
 
-  ub2 prdnam[Nalt];
-  ub2 prdnlen[Nalt];
+  cchar *prdnam[Nalt];
+  ub1 prdnlen[Nalt];
 
   ub1 alts[Nalt * Altlen];
   ub1 ctls[Nalt * Altlen];
@@ -144,14 +144,15 @@ static ub1 startve;
 #define Spool 4096
 
 #define Stablen 128
+#define Vtablen 128
 #define Dirprd 16
-#define Laid (Stablen+2*Dirprd)
+#define Laid (Vtablen+2*Dirprd)
 
 #define Lacnt 16
 
 static struct sentry syntab[Stablen];
-static ub1 vprdmap[Stablen];
-static ub1 syntabeas[Stablen];
+static ub1 vprdmap[Vtablen];
+static ub1 syntabeas[Vtablen];
 
 static ub2 stablen,vtablen;
 static ub2 ndirprd,ndirprd1,ndirprd2,maxprdnam;
@@ -970,14 +971,16 @@ static bool doentry(struct rule *rp,struct sentry *ep,ub1 *sp,ub1 *cp,ub2 len,bo
   return s0;
 }
 
+#define Dirprdnam (Ntnam + Tknamlen + 2)
+
 static ub2 dirtoks[Nnterm * Nalt];
 static ub2 dir1tkruls[Dirprd];
 static ub2 dir2tkruls[Dirprd];
 static ub1 dir1tks[Dirprd];
 static ub1 dir2tks[Dirprd];
 
-static ub1 dir1prdnams[Dirprd * (Ntnam + Tknamlen + 2)];
-static ub1 dir2prdnams[Dirprd * (Ntnam + Tknamlen + 2)];
+static ub1 dir1prdnams[Dirprd * Dirprdnam];
+static ub1 dir2prdnams[Dirprd * Dirprdnam];
 static ub1 dir1prdnlens[Dirprd];
 static ub1 dir2prdnlens[Dirprd];
 
@@ -1001,7 +1004,7 @@ static ub2 addirtok(enum Token tk,ub2 rul,ub2 alt)
       d = ndirprd1++; // overrule nonstore
       sinfo2(lnx,rul,tk,"add Dirtok %u alt %u tk %u",d,alt,tk);
     }
-    np = dir1prdnams + d * (Ntnam + Tknamlen + 2);
+    np = dir1prdnams + d * Dirprdnam;
     nlp = dir1prdnlens;
   } else {
     dtr = dir2tkruls;
@@ -1013,13 +1016,13 @@ static ub2 addirtok(enum Token tk,ub2 rul,ub2 alt)
       sinfo2(lnx,rul,tk,"add dirtok %u alt %u",d,alt);
     } else if (d >= Dirprd) d -= ofs;
     if (d >= Dirprd) serror2(lnx,rul,tk,"exceeding %u dir tokens",Dirprd);
-    np = dir2prdnams + d * (Ntnam + Tknamlen + 2);
+    np = dir2prdnams + d * Dirprdnam;
     nlp = dir2prdnlens;
   }
   dirtoks[ndx] = d + ofs;
   dtr[d] = rul;
   dt[d] = tk;
-  len = mysnprintf(np,0,Ntnam + Tknamlen + 1,"%s_%s",tknam(tk),ntnam(rul));
+  len = mysnprintf(np,0,Dirprdnam,"%s_%s",tknam(tk),ntnam(rul));
   svrb2(lnx,rul,tk,"add dir %u '%s' alt %u",d,np,alt);
   nlp[d] = len;
   if (len > maxprdnam) maxprdnam = len;
@@ -1302,6 +1305,7 @@ static int mktables(void)
       } // each tk
 
       if (haveve) {
+        if (ve + 1 >= Vtablen) serror2(lnx,r,T99_count,"exceeding max %u productions",Vtablen);
         svrb2(lnx,r,0xff,"alt %u se %u rep %u need0 %u",a,se,isrep,nosingle);
         atr = slen;
         if (si == 0) {
@@ -1313,7 +1317,8 @@ static int mktables(void)
           if (doentry(rp,ep,sp,cp,slen,nosingle)) atr = Sa_s0 | (slen - 1);
         } else if (si > 3) serror2(lnx,r,0xff,"si %u above %u",si,3);
         vprdmap[ve] = se;
-        ep->ve1 = ve;
+        // ep->ve1 = ve;
+        ep->nve++;
         atr |= (si << 4);
         if (rulrep) atr |= Sa_rep;
         syntabeas[ve] = atr;
@@ -1682,7 +1687,7 @@ static int rdspec(cchar *fname,const ub1 *src)
   enum Ctl argc,hiarg=0;
   ub2 hiargln=0;
 
-  cchar *mrgnam;
+  cchar *mrgnam,*nam;
 
   ub1 *dsc=nil;
   ub2 dscpos=0;
@@ -2047,7 +2052,10 @@ static int rdspec(cchar *fname,const ub1 *src)
         if (tmpbits[tk]) serror(n,"duplicate token %s",tknam(tk));
         tmpbits[tk] = 1;
         if (tkdefarg[tk] && argc == 0) argc = ++argn;
-        if (pos < 8) pos += mysnprintf(buf,pos,256,"%.2s`",tknam(tk));
+        if (pos < 8) {
+          nam = tknam(tk);
+          buf[pos++] = *nam & 0xdf; buf[pos++] = nam[1];
+        }
         if (src[mp] == '=') { // alias
           mp++;
           mrgsnam0 = mp;
@@ -2080,7 +2088,7 @@ static int rdspec(cchar *fname,const ub1 *src)
       if (tkdefarg[tk] && argc == 0) argc = ++argn;
       s = tk;
       tkrefs[tk] = lno;
-      dscpos += mysnprintf(dsc,dscpos,Dsclen,"%c%.16s`",dola ? '?' : ' ',tknam2(tk,1));
+      dscpos += mysnprintf(dsc,dscpos,Dsclen,"%c%.16s",dola ? '?' : ' ',tknam2(tk,1));
       dola=0;
 
     // nonterm or merge set
@@ -2255,7 +2263,7 @@ static int rdspec(cchar *fname,const ub1 *src)
     default:   serror2(n,nt0,0xff,"unexpected char '%s' in pattern",chprint(c));
     }
     if (idnam1 == 0) break;
-    rp->prdnam[acur-1] = idnam0; rp->prdnlen[acur-1] = idnam1 - idnam0;
+    rp->prdnam[acur-1] = src + idnam0; rp->prdnlen[acur-1] = idnam1 - idnam0;
     if (t == Cnl) st = Spat0;
     else { st = Scmt; nxst = Spat0; }
   break;
@@ -2468,6 +2476,120 @@ static ub4 rultablin(char *buf,ub4 pos,ub4 len,cchar *nam,ub2 wid,bool nocomma)
   return pos;
 }
 
+static ub4 enumln(char *buf,ub4 pos,ub4 len,sb4 wid,cchar *nam,ub2 n,bool last)
+{
+  ub4 p1;
+
+  if ((n & 3) == 0) p1 = mysnprintf(buf,pos,len,"\n  ");
+  else p1 = 0;
+
+  p1 += mysnprintf(buf,pos+p1,len,"P%*s = %2u",wid,nam,n);
+
+  if (last) return p1;
+
+  buf[pos+p1++] = ',';
+  return p1;
+}
+
+#define Prdnam 32
+static char prdnams[Vtablen * Prdnam];
+
+static void wrprd(struct bufile *fp)
+{
+  cchar *comma;
+  char *pnam;
+  ub1 atr,a,si;
+  ub2 ve,se,r,i;
+  struct rule *rp;
+  struct sentry *ep;
+  ub2 n,pos1=0,pos2=0,pos3=0,pos4=0;
+  ub2 len,len1=2048,len2=512,len3=512,len4=512;
+  static char buf1[2048];
+  char buf2[512];
+  char buf3[512];
+  char buf4[512];
+
+  myfprintf(fp,"// < tablen = sentry < 1dirtok = argdir < laid = la\n\n");
+
+  for (ve = 0; ve < vtablen; ve++) {
+    comma = ve ? "," : "";
+
+    se = vprdmap[ve];
+    ep = syntab + se;
+    atr = syntabeas[ve];
+    si = (atr & Sa_si) >> 4;
+
+    r = ep->nt0;
+    rp = rules + r;
+    a = ep->alt;
+
+    // prod name
+    pnam = prdnams + ve * Prdnam;
+    n = rp->prdnlen[a];
+    if (n) len = mysnprintf(pnam,0,Prdnam,"%.*s",n,rp->prdnam[a]);
+    else len = mysnprintf(pnam,0,Prdnam,"%s_%u",rp->name,a);
+    if (ep->nve > 1) len += mysnprintf(pnam,len,Prdnam,"_%u",si);
+
+    maxprdnam = max(maxprdnam,len);
+
+    // nampool
+    len = mysnprintf(buf1,pos1,len1,"%s ",pnam);
+    pos2 += mysnprintf(buf2,pos2,len2,"%s%u",comma,pos1);
+
+    // atrs
+    pos3 += mysnprintf(buf3,pos3,len3,atr <= 9 ? "  %u" : "  0x%x",atr);
+    buf3[pos3++] = ve < vtablen-1 ? ',' : ' ';
+    if (atr & ~Sa_len) pos3 += mysnprintf(buf3,pos3,len3," // %s",atrnam(atr));
+    buf3[pos3++] = '\n';
+
+    // prdmap
+    pos4 += mysnprintf(buf4,pos4,len4,"%s%u",comma,se);
+
+    pos1 += len;
+  }
+
+  myfprintf(fp,"static const char prodnampool[%u] = \n  \"%s\";\n\n",pos1,buf1);
+  myfprintf(fp,"static const ub2 prodnampos[%u] = { %s };\n\n",vtablen,buf2);
+
+  myfprintf(fp,"static const ub1 vprdmap[%u] = { %s };\n\n",vtablen,buf4);
+
+  myfprintf(fp,"// s0.1 rep.1 re1.1 si.2 len.4 \n");
+  myfprintf(fp,"static const ub1 syntabeas[%u] = {\n%.*s};\n\n",vtablen,pos3,buf3);
+
+  // enum
+  sb4 pad = -(maxprdnam+2);
+
+  pos1 = 0;
+  for (ve = 0; ve < vtablen; ve++) {
+    pnam = prdnams + ve * Prdnam;
+    pos1 += enumln(buf1,pos1,len1,pad,pnam,ve,0);
+  }
+  pos1 += enumln(buf1,pos1,len1,pad,"tablen",vtablen,0);
+
+  for (i = 0; i < ndirprd1; i++) {
+    pnam = dir1prdnams + i * Dirprdnam;
+    pos1 += enumln(buf1,pos1,len1,pad,pnam,i + vtablen,0);
+  }
+  pos1 += enumln(buf1,pos1,len1,pad,"1dirtok",vtablen + ndirprd1,0);
+
+  for (i = 0; i < ndirprd2; i++) {
+    pnam = dir2prdnams + i * Dirprdnam;
+    pos1 += enumln(buf1,pos1,len1,pad,pnam,i + vtablen + ndirprd1,0);
+  }
+  pos1 += enumln(buf1,pos1,len1,pad,"laid",vtablen + ndirprd,0);
+
+  for (i = 0; i < lacnt; i++) {
+    pos2 = mysnprintf(buf2,0,32,"laid_%u",i);
+
+    pos1 += enumln(buf1,pos1,len1,pad,buf2,i + vtablen + ndirprd,0);
+  }
+
+  pos1 += enumln(buf1,pos1,len1,pad,"endrep",vtablen + ndirprd + lacnt,0);
+  pos1 += enumln(buf1,pos1,len1,pad,"count",vtablen + ndirprd + lacnt + 1,1);
+
+  myfprintf(fp,"enum %sProduction {%.*s\n};\n\n",packed8,pos1,buf1);
+}
+
 static void wrfhdr(struct bufile *fp)
 {
   myfprintf(fp,"/* generated by gensyn %s %s\n\n",version,fmtdate(globs.prgdtim,globs.prgdmin));
@@ -2477,7 +2599,7 @@ static void wrfhdr(struct bufile *fp)
   myfprintf(fp,"static const char syninfo[] = \"%s %s  %s %s\";\n\n",specname,specversion,specxdate,speclang);
 }
 
-static int wrfile(cchar *spec)
+static int wrfile(void)
 {
   enum Token tk,tk1,tk2,tk3;
   ub2 mrgbit;
@@ -2518,7 +2640,7 @@ static int wrfile(cchar *spec)
   char spool[Spool];
   ub2 sposs[256];
 
-  ub2 pos,pos1,pos2,pos20;
+  ub2 pos1,pos2,pos20;
   static char buf1[512];
   char buf2[256];
   char buf3[256];
@@ -2622,94 +2744,9 @@ static int wrfile(cchar *spec)
   }
   myfprintf(&sfp," };\n\n");
 
-  spos = sposz = 0;
-  for (se = 0; se < stablen; se++) {
-    ep = syntab + se;
-    len = ep->len;
-    if (len > maxlen) { maxlen = len; hisi = se; }
-    nt = ep->nt0;
-    rp = rules + nt;
-    a = ep->alt;
-    if ((len=rp->prdnlen[a])) {
-      pos = mysnprintf(ep->nam,0,32,"%.*s",len,spec + rp->prdnam[a]);
-    } else {
-      pos = mysnprintf(ep->nam,0,32,"%s_%u",rp->name,se);
-    }
-    if (pos > maxprdnam) maxprdnam = pos;
-    memcpy(spool + spos,ep->nam,pos);
-    sposs[se] = sposz;
-    spos += pos;
-    sposz += pos + 1;
-    spool[spos++] = bs;
-    spool[spos++] = '0';
-  }
+  wrprd(&sfp),
 
   prdnamwid = maxprdnam + 2;
-
-  myfprintf(&sfp,"// < tablen = sentry < 1dirtok = argdir < laid = la\n\n");
-
-  myfprintf(&sfp,"enum %sProduction {\n  ",packed8);
-
-  for (se = 0; se < stablen; se++) {
-    ep = syntab + se;
-    myfprintf(&sfp,"P%*s = %2u,%s",-prdnamwid,ep->nam,se,(se & 3) == 3 ? "\n  " : "");
-  }
-  if ((stablen % 3) == 0) myfprintf(&sfp,"\n  ");
-  myfprintf(&sfp,"P%*s = %2u,\n\n  ",-prdnamwid,"tablen",stablen);
-
-  for (ve = stablen; ve < vtablen; ve++) {
-    spool[spos++] = bs;
-    spool[spos++] = '0';
-    sposs[ve] = sposz;
-    sposz += 1;
-  }
-
-  for (i = 0; i < ndirprd1; i++) {
-    pos = dir1prdnlens[i];
-    memcpy(spool + spos,dir1prdnams + i * (Ntnam + Tknamlen + 2),pos);
-    myfprintf(&sfp,"P%*.*s = %2u,%s",-prdnamwid,pos,spool+spos,i + vtablen,(i & 3) == 3 ? "\n  " : "");
-    if (pos > maxprdnam) maxprdnam = pos;
-    sposs[i+vtablen] = sposz;
-    spos += pos;
-    sposz += pos + 1;
-    spool[spos++] = bs;
-    spool[spos++] = '0';
-  }
-
-  myfprintf(&sfp,"\n  P%*s = %2u,\n  ",-prdnamwid,"1dirtok",ndirprd1 + stablen);
-
-  for (i = 0; i < ndirprd2; i++) {
-    pos = dir2prdnlens[i];
-    memcpy(spool + spos,dir2prdnams + i * (Ntnam + Tknamlen + 2),pos);
-    myfprintf(&sfp,"P%*.*s = %2u,%s",-prdnamwid,pos,spool+spos,i + vtablen + ndirprd1,(i & 3) == 3 ? "\n  " : "");
-    if (pos > maxprdnam) maxprdnam = pos;
-    sposs[i+ndirprd1+vtablen] = sposz;
-    spos += pos;
-    sposz += pos + 1;
-    spool[spos++] = bs;
-    spool[spos++] = '0';
-  }
-
-  myfprintf(&sfp,"\n  P%*s = %2u,",-prdnamwid,"laid",vtablen + ndirprd);
-
-  for (i = 0; i < lacnt; i++) {
-    pos2 = mysnprintf(buf2,0,32,"laid_%u",i);
-    myfprintf(&sfp,"P%*.*s = %2u,%s",-prdnamwid,pos2,buf2,i + vtablen + ndirprd,(i & 3) == 3 ? "\n  " : "");
-  }
-
-  myfprintf(&sfp,"\n  P%*s = %2u,",-prdnamwid,"endrep",vtablen + ndirprd + lacnt);
-  myfprintf(&sfp,"P%*s = %2u\n};\n\n",-prdnamwid,"count",vtablen + ndirprd + lacnt + 1);
-
-  myfprintf(&sfp,"static const char prodnampool[%u] = \"%.*s\";\n\n",spos,spos,spool);
-  poolsizes += spos;
-
-  myfprintf(&sfp,"static const ub2 prodnampos[%u] = { ",vtablen+ndirprd);
-  poolsizes += (vtablen+ndirprd) * 2;
-
-  for (se = 0; se < vtablen+ndirprd; se++) {
-    myfprintf(&sfp,"%.*s%u",se,",",sposs[se]);
-  }
-  myfprintf(&sfp," };\n\n");
 
   ub4 sesiz = 2 * Slen;
   ub4 sisiz = (ub4)sizeof(struct seinfo);
@@ -2721,7 +2758,7 @@ static int wrfile(cchar *spec)
   nr = rul2nrul[startrule];
   myfprintf(&sfp,"static const enum Nterm startrule = N%s; // %u\n",ntnam(startrule),nr);
   se = vprdmap[startve];
-  myfprintf(&sfp,"static const ub1 startve = %u; // %s\n",startve,syntab[se].nam);
+  myfprintf(&sfp,"static const ub1 startve = %u; // %s\n",startve,prdnams + startve * Prdnam);
 
   // --- main syntab ---
 
@@ -2757,7 +2794,7 @@ static int wrfile(cchar *spec)
     ve = ep->ve0;
     atr = syntabeas[ve];
     pos2 = mysnprintf(buf2,0,256,"%*s %*u %*u %*u %*s %*s %s",
-      namwid,symnam(ep->s0),namwid,se,namwid,lno,namwid,a,namwid,rp->name,namwid,ep->nam,atrnam(atr));
+      namwid,symnam(ep->s0),namwid,se,namwid,lno,namwid,a,namwid,rp->name,namwid,prdnams + ve * Prdnam,atrnam(atr));
     pos2 = underline(buf2,pos2);
 
     labits = ep->la;
@@ -2769,7 +2806,7 @@ static int wrfile(cchar *spec)
         pos2 += mysnprintf(buf2,pos2,256," %u ",laid);
         for (lasn = 0; lasn < lasetn[laid]; lasn++) {
           la = lasets[laid * Laset + lasn];
-          if (la < vtablen) pos2 += mysnprintf(buf2,pos2,256," %s",syntab[la].nam);
+          if (la < vtablen) pos2 += mysnprintf(buf2,pos2,256," %s",prdnams + la * Prdnam);
           else if (la >= vtablen + ndirprd1) {
             tk = dir2tks[la - vtablen - ndirprd1];
             pos2 += mysnprintf(buf2,pos2,256," .%s",tknam(tk));
@@ -2864,37 +2901,8 @@ static int wrfile(cchar *spec)
   rp = rules + ep->nt0;
   info("max len %u for %u %.*s",maxlen,hisi,rp->dsclen[ep->alt],rp->desc + ep->alt * Dsclen);
 
-  pos1 = 0;
-  for (ve = 0; ve < vtablen; ve++) {
-    se = vprdmap[ve];
-    pos1 += mysnprintf(buf1,pos1,512,"%.*s%u",ve,",",se);
-  }
-
-  myfprintf(&sfp,"static const enum Production vprdmap[%u] = { %s };\n\n",vtablen,buf1);
-  poolsizes += vtablen;
-
-  pos1 = 0;
-  for (se = 0; se < stablen; se++) {
-    ep = syntab + se;
-    nt = ep->nt0;
-    pos1 += mysnprintf(buf1,pos1,512,"%.*s%u",se,",",nt);
-  }
-
-  myfprintf(&sfp,"// for diags\nstatic const enum Nterm prodrules[%u] = { %s };\n\n",stablen,buf1);
+  // myfprintf(&sfp,"// for diags\nstatic const enum Nterm prodrules[%u] = { %s };\n\n",stablen,buf1);
   poolsizes += stablen;
-
-  myfprintf(&sfp,"// s0.1 rep.1 re1.1 si.1 len.4 \nstatic const ub1 syntabeas[%u] = {\n",vtablen);
-  poolsizes += stablen;
-
-  for (ve = 0; ve < vtablen; ve++) {
-    atr = syntabeas[ve];
-    if (atr <= 9) myfprintf(&sfp,"  %u",atr);
-    else myfprintf(&sfp,"  %#x",atr);
-    if (ve < vtablen - 1) myfputc(&sfp,',');
-    if (atr & ~Sa_len) myfprintf(&sfp," // %s\n",atrnam(atr));
-    else myfputc(&sfp,'\n');
-  }
-  myfprintf(&sfp,"};\n\n");
 
   // end main syntab
 
@@ -3000,7 +3008,7 @@ static int wrfile(cchar *spec)
           tk2 = dir2tks[x2];
           if (tk != tk2) serror2(lnx,r,tk,"dirtok %s for %u",tknam(tk2),x2);
           x1 = rp->firstrn[tk2];
-          pos1 = rultablin(buf1,pos1,256,dir2prdnams + x2 * (Ntnam + Tknamlen + 2),prdnamwid,comma);
+          pos1 = rultablin(buf1,pos1,256,dir2prdnams + x2 * Dirprdnam,prdnamwid,comma);
           pos2 += mysnprintf(buf2,pos2,256,"   %u.%*s",x1,prdnamwid2,tknam(tk));
           pos20 = pos2;
           cnt++; dircnt++;
@@ -3010,7 +3018,7 @@ static int wrfile(cchar *spec)
           tk2 = dir1tks[x2];
           if (tk != tk2) serror2(lnx,r,tk,"dirtok %s for %u",tknam(tk2),x2);
           x1 = rp->firstrn[tk2];
-          pos1 = rultablin(buf1,pos1,256,dir1prdnams + x2 * (Ntnam + Tknamlen + 2),prdnamwid,comma);
+          pos1 = rultablin(buf1,pos1,256,dir1prdnams + x2 * Dirprdnam,prdnamwid,comma);
           pos2 += mysnprintf(buf2,pos2,256,"   %u,%*s",x1,prdnamwid2,tknam(tk));
           pos20 = pos2;
           cnt++; dircnt++;
@@ -3019,9 +3027,9 @@ static int wrfile(cchar *spec)
           se = vprdmap[x2];
           atr = syntabeas[x2];
           ep = syntab + se;
-//          if (ep->nt0 != r) serror2(lnx,r,tk,"reference to rule %s",ntnam(ep->nt0));
           si = (atr & Sa_si) >> 4;
-          pos1 = rultablin(buf1,pos1,256,ep->nam,prdnamwid,comma);
+          nam = prdnams + x2 * Prdnam;
+          pos1 = rultablin(buf1,pos1,256,nam,prdnamwid,comma);
 //          buf2[pos2++] = ep->la ? '?' : ' ';
           pos2 += mysnprintf(buf2,pos2,256,"%2u %c%*s",x2,si ? si + '0' : ' ',prdnamwid2,tknam(tk));
           pos20 = pos2;
@@ -3066,7 +3074,7 @@ static int wrfile(cchar *spec)
       if (rp->rulrep) myfputc(&sfp,rp->rulrep == 1 ? '*' : '+');
       myfprintf(&sfp,"%.*s",rp->dsclen[a],rp->desc + a * Dsclen);
     }
-    myfprintf(&sfp,"\t %.*s\n",rp->prdnlen[a],spec + rp->prdnam[a]);
+    myfprintf(&sfp,"\t %.*s\n",rp->prdnlen[a],rp->prdnam[a]);
   }
 
   myfprintf(&sfp,"\n#endif\n");
@@ -3240,7 +3248,7 @@ static int do_main(int argc, char *argv[])
 
   timeit(&T1,"made tables in");
 
-  if (wrfile(spec)) return 2;
+  if (wrfile()) return 2;
   info("wrote %s",specname);
 
   timeit(&T1,"wrote syntab in");

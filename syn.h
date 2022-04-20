@@ -70,13 +70,13 @@ struct sentry {
 // gen only
 #ifdef Gensyn
   ub1 len; // #syms
-  ub1 ve0,ve1;
+  ub1 nve;
+  ub1 ve0;
   ub1 nt0;    // enum Nterm current rule
   ub1 s0;
   ub1 alt;
   ub4 la;
   ub2 lno;
-  char nam[32];
   char src[44];
 #endif
 };

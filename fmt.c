@@ -284,7 +284,7 @@ ub4 myvsnprint(char *dst,ub4 pos,ub4 len,const char *fmt,va_list ap)
   const char *p = fmt;
   char *end,*org,*org2,*end2;
   ub4 slen,flen = 0,lim,ndig;
-  ub4 n = 0,orgn;
+  ub4 n = 0;
   ub2 wid;
   ub4 prec;
   enum Lenmod lenmod;
@@ -302,7 +302,7 @@ ub4 myvsnprint(char *dst,ub4 pos,ub4 len,const char *fmt,va_list ap)
   void *vpval=nil;
   char c,c1,c2=0;
   // int fpclass;
-  char pad,signch,hexch=0,expch=0;
+  char pad,signch,hexch=0,expch=0,endc=0;
   bool iszero,lastone=0,isi,isf;
   int fpsign=0;
   enum Flags flags;
@@ -444,9 +444,10 @@ ub4 myvsnprint(char *dst,ub4 pos,ub4 len,const char *fmt,va_list ap)
 
       case 'c': spec = Char;   break;
       case 's': spec = String;
+        endc = 0;
         if (*p == '`') {
           if (p[1] == 's') { flags |= Plural; p += 2; }
-          else if (*p) { flags |= Ucfirst; p++; }
+          else if (p[1] == 'z') { endc = ' '; p += 2; }
         }
         break;
       case 'p': spec = Ptr;    break;
@@ -628,25 +629,24 @@ ub4 myvsnprint(char *dst,ub4 pos,ub4 len,const char *fmt,va_list ap)
 
      case String:
      case String|Long:
-       orgn = n;
        if (wid == 0) {
-         while (prec && *pcval) { dst[n++] = *pcval++; prec--; }
+         while (prec && *pcval != endc) { dst[n++] = *pcval++; prec--; }
          if ( (flags & Plural) && lastone == 0) dst[n++] = 's';
        } else if (flags & Padleft) {
          pcend = pcval;
-         while (prec-- && *pcend) dst[n++] = *pcend++;
+         while (prec-- && *pcend != endc) dst[n++] = *pcend++;
          slen = (ub4)(pcend - pcval);
          wid = min(wid,len - n - slen);
          if (wid > slen) { memset(dst+n,' ',wid-slen); n += wid - slen; }
        } else {
          pcend = pcval;
-         while (prec-- && *pcend) pcend++;
+         while (prec-- && *pcend != endc) pcend++;
          slen = (ub4)(pcend - pcval);
          wid = min(wid,(ub2)(len - n - slen));
          if (wid > slen) { memset(dst+n,' ',wid-slen); n += wid - slen; }
          memcpy(dst+n,pcval,slen); n += slen;
        }
-       if ( (flags & Ucfirst) && n != orgn && Ctab[(dst[orgn])] == Calpha) dst[orgn] &= 0xdf;
+       // if ( (flags & Ucfirst) && n != orgn && Ctab[(dst[orgn])] == Calpha) dst[orgn] &= 0xdf;
      break;
 
      case Hexstr:
@@ -721,11 +721,8 @@ ub4 myvsnprint(char *dst,ub4 pos,ub4 len,const char *fmt,va_list ap)
      flen = (ub4)(end - org);
 
      // leading zeroes
-     if (prec > 1 && (spec == Sdec || spec == Oct || spec == Dec || spec == Hex)) {
-       if (prec > flen) {
-          slen = prec - flen;
-          if (slen < flen) { do *--org = '0'; while (--slen); }
-        }
+     if (prec > flen && (spec == Sdec || spec == Oct || spec == Dec || spec == Hex)) {
+       do *--org = '0'; while (prec > ++flen);
      }
 
      // postproc

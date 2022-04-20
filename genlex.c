@@ -2232,6 +2232,7 @@ static ub4 wrhsh(struct bufile *lfp,struct bufile *sfp,cchar *pfx,cchar *names[]
   char spool[Spool];
   ub2 sposs[Nkwd];
   char pfx0 = *pfx++;
+  char pfx1 = *pfx & 0xdf;
   cchar *mpfx = map ? "t" : "";
 
  if (sfp->top) {
@@ -2264,8 +2265,8 @@ static ub4 wrhsh(struct bufile *lfp,struct bufile *sfp,cchar *pfx,cchar *names[]
 
  } // do sfp
 
-  myfprintf(lfp,"#define %s`hshmask %u\n",pfx,hshlen-1);
-  myfprintf(lfp,"#define %s`hshbit  %u\n\n",pfx,msb(hshlen));
+  myfprintf(lfp,"#define %c%shshmask %u\n",pfx1,pfx+1,hshlen-1);
+  myfprintf(lfp,"#define %c%shshbit  %u\n\n",pfx1,pfx+1,msb(hshlen));
   myfprintf(lfp,"#define x %c99_count\n\n",pfx0);
 
   myfprintf(lfp,"static const ub1 %shsh[%u] = {\n  ",pfx,hshlen);

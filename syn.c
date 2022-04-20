@@ -82,6 +82,7 @@ static cchar *tknam(enum Token tk,ub4 bits)
   else if (tk < T99_kwd) {
     memcpy(buf,kwnampool + kwnamposs[tk],len=kwnamlens[tk]);
     buf[len] = 0;
+    buf[len+1] = ' ';
   }
 #endif
   else {
@@ -99,6 +100,7 @@ static cchar *tknam(enum Token tk,ub4 bits)
       hc >>= 1; bits >>= 8;
     }
     *q = 0;
+    q[1] = ' ';
   }
   return buf;
 }
@@ -137,11 +139,12 @@ static cchar *symnam(enum Symbol s)
   else return "Seof";
 }
 
-static cchar *prodnam(enum Production p)
+static cchar *prodnam(enum Production p,enum Token tk)
 {
-  if (p == Pcount) return "None";
-  else if (p == Pendrep) return "Endrep";
-  else if (p >= Plaid) return "LA";
+  if (p == Pcount) return "None ";
+  else if (p == Pendrep) return "Endrep ";
+  else if (p >= Plaid) return "LA ";
+  else if (p >= Ptablen) return tknam(tk,0);
   else return prodnampool + prodnampos[p];
 }
 
@@ -259,7 +262,7 @@ static void ser(ub4 shfln,
     eip = stinfo + se;
     svrb(fpos,"si %u ln %u",si,eip->lno);
 
-    pos += mysnprintf(buf,pos,len,"\n%s.%s representing '%s' at %s.%u\n",ntnam(r),prodnam(se),symnam(s),synfname,eip->lno);
+    pos += mysnprintf(buf,pos,len,"\n%s.%s`z representing '%s' at %s.%u\n",ntnam(r),prodnam(se,0),symnam(s),synfname,eip->lno);
 
     if (atr & Sa_s0) {
       pos += mysnprintf(buf,pos,len,"%s ",symnam(eip->s0));
@@ -349,7 +352,7 @@ static void __attribute__ ((format (printf,9,10))) diafln(
       ep = syntab + se; eip = stinfo + se;
       lno = eip->lno;
       atr = syntabeas[se];
-      pnam = prodnam(se);
+      pnam = prodnam(se,0);
     } else if (ve >= Plaid) {
       laid = ve - Plaid;
     }
@@ -361,8 +364,8 @@ static void __attribute__ ((format (printf,9,10))) diafln(
   buf[pos++] = laid != 0xff ? '?' : ' ';
   buf[pos++] = (atr & Sa_rep) ? '*' : ' ';
 
-  if (pnam) pos += mysnprintf(buf,pos,256," %-10.8s ",pnam);
-  mysnprintf(buf,pos,256,"%.3u ",lno);
+  if (pnam) pos += mysnprintf(buf,pos,256," %-10.8s`z ",pnam);
+  pos += mysnprintf(buf,pos,256,"%3u ",lno);
 
   if (ep) {
     sp = ep->syms;
@@ -594,7 +597,7 @@ nxtsym:
 
       if (nxve < Ptablen) { // regular match -> push into new rule
 
-        sdia(lsp,ti,s,r,lvl,se,si,"push into %s",ntnam(nxr));
+        sdia(lsp,ti,s,r,lvl,nxve,si,"push into %s ve %u",ntnam(nxr),nxve);
 
         if (lvl + Skip >= Depth) ice(fpos,0,"exceeding %u nesting depth",lvl);
 
@@ -839,7 +842,6 @@ endsym:
     si++;
   }
 
-  r = prodrules[se];
   sdia(lsp,ti,s,r,lvl,se,si,"pop into %u lvl %u",r,lvl);
 //  info("se %u si %u s %u",se,si,sp[si]);
 
