@@ -191,8 +191,10 @@ static ub2 transtablen;
 #define Lxercnt 32
 #define Lxernam 16
 
-#define Kwhshiter  4096
+#define Kwhshiter  1024
 #define Dndhshiter 1024
+
+static ub8 chkhsh;
 
 static inline ub4 align4(ub4 x)
 {
@@ -263,6 +265,8 @@ static ub1 addtok(ub2 ln,cchar *name,ub1 len,ub1 grp)
   toklens[nltok] = len;
   tokgrps[nltok] = grp;
   vrb("add token %u '%.*s'",nltok,len,name);
+  if (nltok) chkhsh = hash64fnv(name,len,chkhsh);
+  else chkhsh = hash64(name,len);
   if (len > hitknamlen) hitknamlen = len;
   if (grp > tkhigrp) tkhigrp = grp;
   return nltok++;
@@ -519,8 +523,6 @@ static ub1 getkwd(cchar *name,ub1 len)
   return k;
 }
 
-static ub8 chkhsh;
-
 static ub4 hashstr(cchar *p,ub2 len,ub4 hc)
 {
   char buf[1024];
@@ -545,8 +547,7 @@ static void addkwd1(ub2 ln,cchar *name,ub1 len)
   if (len > hikwlen) hikwlen = len;
   if (len < lokwlen) lokwlen = len;
   havekwlens[len]++;
-  if (nkwd) chkhsh = hash64fnv(name,len,chkhsh);
-  else chkhsh = hash64(name,len);
+  chkhsh = hash64fnv(name,len,chkhsh);
   nkwd = pos + 1;
 }
 
@@ -638,7 +639,6 @@ static ub2 addmasks(ub2 tti,ub1 *sp,enum Ctl *cp,ub1 len)
   ub2 *p;
   ub1 s;
   enum Ctl z;
-  bool new = 0;
 
   for (i = 0; i < len; i++) {
     p = masktabs + i * 256;
@@ -1609,7 +1609,7 @@ static int rdspec(cchar *fname)
     switch (t) {
     case Cnl:    break;
     case Calpha: varnam0 = n; varnam1=0; xst = Svarnam; break;
-    case Chsh:   xst = Stoknam0; break;
+    case Chsh:   xst = Scmt; xst2 = Stoknam0; break;
     case Cws:    xst = Stoknam1; break;
     default :    serror(n,"expected token, found '%s'",chprint(c));
     }
@@ -2250,6 +2250,7 @@ static ub4 wrhsh(struct bufile *lfp,struct bufile *sfp,cchar *pfx,cchar *names[]
   myfprintf(sfp,"static const char %s%snampool[%3u] = \"%.*s\";\n",mpfx,pfx,spos,spos,spool);
 
   hc = hashalstr(spool,spos,hshseed);
+  info("hsh len %u %x seed %x '%.*s'",spos-1,hc,hshseed,spos,spool);
 
   myfprintf(sfp,"static const ub2  %s%snamposs[%3u] = { ",mpfx,pfx,cnt);
   for (i = 0; i < cnt; i++) {
@@ -2689,7 +2690,7 @@ static int wrfile(void)
       myfprintf(&sfp,"\";\n\n");
     } else {
       if (nkwd) {
-        myfprintf(&sfp,"#define tkwnampool kwnampool\n#define tkwnamposs kwnamposs\n#define tkwnlens kwnamlens\n");
+        myfprintf(&sfp,"#define tkwnampool kwnampool\n#define tkwnamposs kwnamposs\n#define tkwnamlens kwnamlens\n");
         myfprintf(&sfp,"#define t99_count T99_kwd\n\n");
       }
       myfprintf(&sfp,"#define token Token\n\n");

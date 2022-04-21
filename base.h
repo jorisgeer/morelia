@@ -154,7 +154,8 @@ extern ub4 sat32(ub8 x,ub8 y);
 extern ub4 nxpwr2(ub4 x,ub1 *bit);
 
 extern ub2 msb(ub8 x);
-extern ub4 cntbits(ub4 x);
+extern ub2 cntbits(ub4 x);
+extern ub2 cntbits8(ub8 x);
 extern ub2 expndx(ub2 x,ub2 lim);
 
 extern int inibase(void);

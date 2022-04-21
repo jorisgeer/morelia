@@ -21,9 +21,8 @@ static inline unsigned int scramble(unsigned int k) {
 static unsigned int hashalstr(const unsigned char *s,unsigned int len,unsigned int seed)
 {
 	unsigned int h = seed;
-  unsigned int i,k,len4 = len >> 2;
+  unsigned int i,k,m,len4 = len >> 2;
   const unsigned int *s4;
-  const unsigned char *q = s;
 
   if (len4) {
     s4 = (const unsigned int *)s;
@@ -38,20 +37,20 @@ static unsigned int hashalstr(const unsigned char *s,unsigned int len,unsigned i
     } while (i < len4);
   }
 
-  k = 0;
-  for (i = len & 3; i; i--) {
-    k <<= 8;
-    k |= s[i - 1];
+  m = 0;
+  switch(len & 3) {
+  case 3: m = s[2] << 16; Fallthrough;
+  case 2: m ^= s[1] << 8; Fallthrough;
+  case 1: m ^= s[0]; Fallthrough;
+  case 0:
+    h ^= len;
+    h ^= h >> 16;
+    h *= 0x85ebca6b;
+    h ^= h >> 13;
+    h *= 0xc2b2ae35;
+    h ^= h >> 16;
   }
-  h ^= scramble(k);
-
-	h ^= len;
-	h ^= h >> 16;
-	h *= 0x85ebca6b;
-	h ^= h >> 13;
-	h *= 0xc2b2ae35;
-	h ^= h >> 16;
-	return h;
+  return h;
 }
 
 #ifdef __clang__

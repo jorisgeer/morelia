@@ -6,7 +6,7 @@ set -f
 set -eu
 # set -x
 
-lang=python
+lang=minipython
 
 compiler=gcc
 analyzer=clang
@@ -58,7 +58,8 @@ usage()
   echo '-u - unconditional'
   echo '-v - verbose'
   echo '-h - help'
-  echo '-l - build license'
+  echo '-l - select language'
+  echo '-L - build license'
   echo
   echo 'target - only build given target'
 }
@@ -194,6 +195,7 @@ run()
 {
   local tgt
   local dep
+  local alw
   local cmd
   local mtime
   local newer
@@ -201,12 +203,13 @@ run()
 
   tgt="$1"
   dep="$2"
-  cmd="$3"
-  args="$4"
+  alw="$3"
+  cmd="$4"
+  args="$5"
   uncond=""
 
-  newer=$always
-  if [ $always -eq 1 ]; then
+  newer=$alw
+  if [ $alw -eq 1 ]; then
     uncond="-u"
   fi
 
@@ -254,7 +257,8 @@ while [ $# -ge 1 ]; do
     cflags_t=$anacflags ;;
   '-g') dogen=1 ;;
   '-h'|'-?') usage ;;
-  '-l') mklic ;;
+  '-l') lang=$2; shift ;;
+  '-L') mklic ;;
   '-n') dryrun=1 ;;
   '-m') map=1 ;;
   '-u') always=1 ;;
@@ -280,15 +284,16 @@ if [ $dogen -eq 1 ]; then
   tc Genlex genlex.o genlex.c base.h chr.h os.h msg.h math.h mem.h util.h tim.h hash.h
   ld        genlex   genlex.o base.o chr.o os.o msg.o math.o mem.o util.o tim.o fmt.o
 
-  run tok.h    $lang.lex genlex "-1 $lang.lex lextb1.i lexdef.h tok.h"
-  run lexdef.h $lang.lex genlex "-1 $lang.lex lextb1.i lexdef.h tok.h"
-  run lextb1.i $lang.lex genlex "-1 $lang.lex lextb1.i lexdef.h tok.h"
-  run lextb2.i $lang.lex genlex "-2 $lang.lex lextb2.i"
+  run tok.h    $lang.lex $always genlex "-1 $lang.lex lextb1.i lexdef.h tok.h"
+  run lexdef.h $lang.lex 0 genlex "-1 $lang.lex lextb1.i lexdef.h tok.h"
+  run lextb1.i $lang.lex 0 genlex "-1 $lang.lex lextb1.i lexdef.h tok.h"
+
+  run lextb2.i $lang.lex $always genlex "-2 $lang.lex lextb2.i"
 
   tc Gensyn gensyn.o gensyn.c base.h chr.h os.h fmt.h msg.h mem.h util.h tim.h syn.h tok.h
   ld        gensyn   gensyn.o base.o chr.o os.o fmt.o msg.o mem.o util.o tim.o
 
-  run syntab.i $lang.syn gensyn "$lang.syn syntab.i"
+  run syntab.i $lang.syn $always gensyn "$lang.syn syntab.i"
 fi
 
 if [ $ana -eq 0 ]; then

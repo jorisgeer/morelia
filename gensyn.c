@@ -65,7 +65,7 @@ static const char *stabname;
 static bool allowunref = 0;
 
 static bool ena_lookahead = 1;
-static bool ena_benambi = 1;
+static bool ena_benambi = 0;
 
 static bool hastidctl,enatidctl = 0;
 static bool do_transcript = 0;
@@ -115,6 +115,7 @@ struct rule {
 
   ub8 second0[T99_count]; // bit=tkterm2 dim0=term1
   ub8 second[Nalt * Nsi * T99_count]; // bit=tkterm2 dim0=term1 dim1=si dim2=alt
+  ub8 secadd;
 
   ub1 altlens[Nalt];
   ub2 lnos[Nalt];
@@ -188,7 +189,7 @@ static ub1 tmpbits[T99_count];
 static bool tkdefarg[T99_count];
 
 static ub2 laseq;
-static ub8 laseconds[Lacnt * Laset * T99_count];
+static ub8 laseconds[Lacnt * T99_count * Laset];
 
 static ub1 higrpdif;
 static ub4 higrpfln;
@@ -562,38 +563,6 @@ static ub2 lacnt;
 enum Fset { Fs_prep,Fs_term,Fs_nterm,Fs_fin,Fs_second };
 static const char fsnam[] = "PTNFS";
 
-static bool addsec(struct rule *rp,enum Token t)
-{
-  ub1 a;
-  ub4 abit;
-  ub1 lti;
-  ub1 si,hisi;
-  ub8 s,tbit,*sp,*sp0;
-  ub4 *fp;
-  enum Token t1;
-  bool chg = 0;
-
-  tbit = 1UL << t;
-  for (a = 0; a < rp->altcnt; a++) {
-    abit = 1U << a;
-    lti = rp->ltis[a];
-    if (lti > 1) continue;
-    hisi = rp->hisis[a];
-    sp0 = rp->second + a * Nsi * T99_count;
-    for (si = 0; si <= hisi; si++) {
-      sp = sp0 + si * T99_count;
-      fp = rp->first + si * T99_count;
-      for (t1 = 0; t1 < T99_count; t1++) {
-        s = sp[t1];
-        if ( (fp[t1] & abit) == 0 || (s & tbit)) continue;
-        sp[t1] |= tbit;
-        chg = 1;
-      }
-    }
-  }
-  return chg;
-}
-
 static bool do_sec2 = 1;
 
 // create first and second sets
@@ -603,7 +572,7 @@ static bool mk12(enum Fset pass,ub2 iter)
   ub2 i,cnt;
   ub2 r,rx;
   ub2 a,ax,acnt;
-  ub1 si,lsi,slen,hisi,six;
+  ub1 si,lsi,slen,hisi,six,si2;
   ub1 lti,hti,loti,hiti,dlti,dhti;
   ub1 s,mrg,*sp;
   enum Ctl z,zr,*cp;
@@ -641,8 +610,6 @@ static bool mk12(enum Fset pass,ub2 iter)
     lno = rp->lno;
     lnx = lno|Lno;
     acnt = rp->altcnt;
-
-//    if (pass == Fs_second && rp->lotcnt == 0) continue;
 
     firstra = rp->firstra;
     firstrn = rp->firstrn;
@@ -759,14 +726,14 @@ static bool mk12(enum Fset pass,ub2 iter)
                     firstrc[t] = 2;
                   }
                 } else firstrc[t] = 3;
-              } else svrb2(lnx,r,t,"rule %s alt %u no first",rxp->name,a);
+              } else if (iter == hi16) svrb2(lnx,r,t,"rule %s alt %u no first",rxp->name,a);
             }
             if (cnt == 0 && iter == hi16) swarn2(lnx,r,t,"rule %s alt %u no first",rxp->name,a);
 
           } else if (pass == Fs_second) {
             for (t = 0; t < T99_count; t++) {
               if (lti == 0) {
-                if (rxp->first[t] == 0) continue;
+                if (rxp->first0[t] == 0) continue;
                 tkfirst[t] = 1;
                 for (ax = 0; ax < rxp->altcnt; ax++) {
                   for (six = 0; six < Nsi; six++) rsp[t] |= rxp->second[(ax * Nsi + six) * T99_count + t];
@@ -789,11 +756,12 @@ static bool mk12(enum Fset pass,ub2 iter)
                   if (rxp->first0[ts]) { rsp[t] |= tbit; rspm[t] |= tbit; }
                 }
               }
-              if (do_sec2 && prx && prx->lotcnt == 1) {
-                if (rxp->first0[t]) change |= addsec(prx,t);
+              if (do_sec2 && prx && prx->lotcnt == 1 && rxp->first0[t]) {
+                tbit = 1UL << t;
+                if ( (prx->secadd & tbit) == 0) { prx->secadd |= tbit; change = 1; }
               }
               prx = rxp;
-            }
+            } // each tf
           }
 
         } // nonterm
@@ -808,7 +776,7 @@ static bool mk12(enum Fset pass,ub2 iter)
               if (firstra[t] == hi16) {
                 firstra[t] = r | a8;
                 firstrn[t] = 0;
-                firstrc[t] = 1;
+                firstrc[t] = (si == slen - 1 ? 1 : 3);
               } else firstrc[t] = 3; // block on ambi
             }
 
@@ -816,8 +784,9 @@ static bool mk12(enum Fset pass,ub2 iter)
             tbit = (1UL << t);
             if (lti == 0) {
               tkfirst[t] = 1;
-              svrb2(lnx,r,s,"first %u for %u %u",t,lti,hti);
-            } else if (lti == 1 || hti == 1) {
+              svrb2(lnx,r,t,"first %u for %u %u",t,lti,hti);
+            }
+            if (lti == 1 || hti == 1) {
               for (tf = 0; tf < T99_count; tf++) {
                 if (tkfirst[tf]) {
                   rsp[tf] |= tbit; rspm[tf] |= tbit;
@@ -825,10 +794,14 @@ static bool mk12(enum Fset pass,ub2 iter)
               }
             }
             if (do_sec2 && prx && prx->lotcnt == 1) {
-              change |= addsec(prx,s);
+              if ( (prx->secadd & tbit) == 0) { prx->secadd |= tbit; change = 1; }
             }
             prx = nil;
-          }
+          } // second
+        } // each tk
+
+        if (pass == Fs_second) {
+          if (lti == 1 || hti == 1) memset(tkfirst,0,T99_count);
         }
 
         rsp = rsp0 + si * T99_count;
@@ -852,8 +825,6 @@ static bool mk12(enum Fset pass,ub2 iter)
           if (si >= Nsi) serror(0,"exceeding %u optional leading symbols",Nsi);
           if (lsi == 1) break;
         }
-
-        // else if (pass == Fs_second && lti == 2) break;
       } while (si < slen);
 
       if (lti == 0) {
@@ -865,7 +836,21 @@ static bool mk12(enum Fset pass,ub2 iter)
 
       rp->ltis[a] = lti;
 
-      if (pass == Fs_second) {
+      // add in possible seconds after end of nterm
+      if (pass == Fs_second && lti == 1) {
+        for (tf = 0; tf < T99_count; tf++) {
+          if ( (rp->first0[tf] & abit) == 0) continue;
+          for (t = 0; t < T99_count; t++) {
+            tbit = 1UL << t;
+            if ( (rp->secadd & tbit) == 0) continue;
+            if ( (rspm[tf] & tbit) == 0) { rspm[tf] |= tbit; change = 1; }
+            for (si2 = 0; si2 <= hisi; si2++) {
+              rsp = rsp0 + si2 * T99_count;
+              if (rsp[tf] & tbit) continue;
+              rsp[tf] |= tbit; change = 1;
+            }
+          }
+        }
 
 #if 0
         for (tf = 0; tf < T99_count; tf++) {
@@ -875,6 +860,7 @@ static bool mk12(enum Fset pass,ub2 iter)
         }
 #endif
 
+      } else if (pass == Fs_second) {
         if (change == 0 && memcmp(osecond,rsp0,sizeof(osecond)) ) change = 1;
       }
 
@@ -909,7 +895,7 @@ static bool mk12(enum Fset pass,ub2 iter)
   return change;
 }
 
-static void mkfirstsec(void)
+static int mkfirstsec(void)
 {
   ub2 iter;
 
@@ -923,6 +909,7 @@ static void mkfirstsec(void)
   mk12(Fs_fin,0);
 
   iter=0; while (mk12(Fs_second,iter) && ++iter < 50) ;
+  return 0;
 }
 
 static ub2 tkrefs[T99_count];
@@ -1615,7 +1602,7 @@ static void addrules(cchar *src,ub2 n,ub2 ln)
 
     len = n - nam0;
 
-    svrb(lno,"add rule %u %.*s",nnterm,len,src+nam0);
+    svrb(lno|Lno,"add rule %u %.*s",nnterm,len,src+nam0);
 
     if (len + 1 >= Ntnam) serrorfln(FLN,lno|Lno,"rule name '%.*s' exceeds len %u",Ntnam,src+nam0,Ntnam);
     r = getnterm(src,nam0,len);
@@ -1938,16 +1925,17 @@ static int rdspec(cchar *fname,const ub1 *src)
 
     case Cqst:
       t2 = Ctab[c2];
-      if (t2 == Cws || t2 == Cnl || t2 == Cqst) { // plain term
+
+      if (t2 == Cws) { // lookahead
+        dola = rp->dolas[acur] = 1;
+      } else if (t2 == Cnl) { // plain term
         symnam0 = n;
-        if (t2 == Cqst) symnam0++;
         st = Spat2;
         mapped = 1;
-      } else if (t2 == Calpha) { // lookahead
-        dola = rp->dolas[acur] = 1;
-        symnam0 = n + 1;
+      } else if (t2 == Cqst) { // plain term
+        symnam0 = n+1;
         st = Spat2;
-        ucfirst = (c2 >= 'A' && c2 <= 'Z');
+        mapped = 1;
       } else if (c2 == '(') { // opt group
         optpos[optlvl] = scur;
         optlvl++;
@@ -1955,7 +1943,7 @@ static int rdspec(cchar *fname,const ub1 *src)
         st = Spat3;
       } else if (c2 == ')') {
         serror(n,"unbalanced group %c",2);
-      }
+      } else serror(n,"unknown sequence ? %c",c2);
       break;
 
     default: // mapped symbols
@@ -2293,7 +2281,7 @@ static int rdspec(cchar *fname,const ub1 *src)
 
   if (hastidctl) infofln(FLN,"typedef / id ctl active");
 
-#if 0
+#if 1
   for (tk = 0; tk < T99_count; tk++) {
     if (tkrefs[tk] == 0) warning("token %s.%u unreferenced",tknam(tk),tk);
   }
@@ -2331,15 +2319,19 @@ static ub4 poolsizes = 0,latabsizes = 0;
 
 static ub2 lasecmap[Lacnt * T99_count];
 
+#define Prdnam 32
+static char prdnams[Vtablen * Prdnam];
+
 static void wrla(struct bufile *fp)
 {
   enum Token tk,ts;
-  ub2 laid,n,x2;
-  ub1 x1,ve,se;
+  ub2 laid,n,x2,nbit;
+  ub1 ve,se;
   ub4 setpos,setcnt;
-  ub8 x8,sec,*lasp;
+  ub8 x8,sec,bit,*lasp;
   ub1 secstyp,sectyp = T99_count < 32 ? 4 : 8;
   ub4 pos,blen = 256;
+  bool cond;
   char buf[256];
 
   myfprintf(fp,"#define Lacnt %u\n\n",lacnt);
@@ -2361,11 +2353,12 @@ static void wrla(struct bufile *fp)
     for (n = 0; n < Laset; n++) {
       if (laid || n) { myfputc(fp,','); buf[pos++] = ' '; }
       if (laid && n == 0) { myfputc(fp,' '); buf[pos++] = ' '; }
-      x1 = lasets[laid * Laset + n];
-      if (x1 == 255) { myfputc(fp,'x'); buf[pos++] = '.'; }
+      ve = lasets[laid * Laset + n];
+      if (ve == 255) { myfputc(fp,'x'); buf[pos++] = '.'; }
       else {
-        myfprintf(fp,"%2u",x1);
-        pos += mysnprintf(buf,pos,blen,"%2u",vprdmap[x1]);
+        myfprintf(fp,"%2u",ve);
+        if (ve < vtablen) pos += mysnprintf(buf,pos,blen,"%2u",vprdmap[ve]);
+        else pos += mysnprintf(buf,pos,blen,"> ");
       }
     }
   }
@@ -2414,8 +2407,16 @@ static void wrla(struct bufile *fp)
         if (ve < vtablen) se = vprdmap[ve];
         else se = stablen;
         pos += mysnprintf(buf,pos,blen,"se %u ln %u ",se,lasetln[laid * Laset + n]);
+        nbit = cntbits8(sec);
         for (ts = 0; ts < T99_count; ts++) {
-          if (sec & (1UL << ts)) pos += mysnprintf(buf,pos,blen,"%s ",tknam(ts));
+          bit = 1UL << ts;
+          if (nbit * 2 > T99_count) {
+            cond = (sec & bit) == 0;
+            if (ts == 0) { buf[pos++] = '~'; buf[pos++] = ' '; }
+          } else {
+            cond = (sec & bit) != 0;
+          }
+          if (cond) pos += mysnprintf(buf,pos,blen,"%s ",tknam(ts));
         }
       }
       myfprintf(fp," //%.*s\n",pos,buf);
@@ -2439,7 +2440,7 @@ static void wrla(struct bufile *fp)
 
   myfprintf(fp,"#if 0\ntypedef ub%u lasec_t;\n",sectyp);
 
-  myfprintf(fp,"static const lasec_t laseconds[Lacnt * Laset * T99_count] = { // %u * %u * %u * %u = %u`B\n",lacnt,Laset,T99_count,sectyp,lacnt * Laset * T99_count * sectyp);
+  myfprintf(fp,"static const lasec_t laseconds[Lacnt * T99_count* Laset] = { // %u * %u * %u * %u = %u`B\n",lacnt,T99_count,Laset,sectyp,lacnt * Laset * T99_count * sectyp);
 
   // latabsizes += lacnt * Laset * T99_count * sectyp;
 
@@ -2490,9 +2491,6 @@ static ub4 enumln(char *buf,ub4 pos,ub4 len,sb4 wid,cchar *nam,ub2 n,bool last)
   buf[pos+p1++] = ',';
   return p1;
 }
-
-#define Prdnam 32
-static char prdnams[Vtablen * Prdnam];
 
 static void wrprd(struct bufile *fp)
 {
@@ -3239,7 +3237,7 @@ static int do_main(int argc, char *argv[])
 
   timeit(&T1,"read spec in ");
 
-  mkfirstsec();
+  if (mkfirstsec()) return 2;
 
   timeit(&T1,"calculated first and second sets in");
 
@@ -3249,7 +3247,7 @@ static int do_main(int argc, char *argv[])
   timeit(&T1,"made tables in");
 
   if (wrfile()) return 2;
-  info("wrote %s",specname);
+  info("wrote %s",stabname);
 
   timeit(&T1,"wrote syntab in");
 

@@ -1283,9 +1283,10 @@ void inilex(void)
 
   // check genlex used same hash as us
 #if Kwcnt > 0
-  hc = hashalstr(tkwnampool,sizeof(tkwnampool),Hshseed);
+  i = sizeof(tkwnampool);
+  hc = hashalstr(tkwnampool,i,Hshseed);
   if (hc != kwnamhsh) {
-    ice(0,"lexer inconsistent kwd hash %s: %x versus genlex: %x",globs.prgnam,hc,kwnamhsh);
+    ice(0,"lexer inconsistent kwd hash %s: %x versus genlex: %x len %u seed %x '%.*s'",globs.prgnam,hc,kwnamhsh,i,Hshseed,i,tkwnampool);
   }
 #endif
 

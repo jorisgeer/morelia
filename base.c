@@ -55,9 +55,19 @@ ub2 msb(ub8 x)
   return b;
 }
 
-ub4 cntbits(ub4 x)
+ub2 cntbits(ub4 x)
 {
-  ub4 n = 0;
+  ub2 n = 0;
+  while (x) {
+    if (x & 1) n++;
+    x >>= 1;
+  }
+  return n;
+}
+
+ub2 cntbits8(ub8 x)
+{
+  ub2 n = 0;
   while (x) {
     if (x & 1) n++;
     x >>= 1;
