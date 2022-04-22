@@ -316,7 +316,7 @@ static void __attribute__ ((format (printf,9,10))) diafln(
   enum Symbol s,
   enum Nterm r,
   ub2 lvl,
-  ub2 ve,
+  enum Production ve,
   ub2 si,
   cchar *fmt,...)
 {
@@ -331,7 +331,7 @@ static void __attribute__ ((format (printf,9,10))) diafln(
   char buf[256];
   ub2 lno=0;
   ub2 pos;
-  enum Production se;
+  ub2 se=0;
   enum Satrs atr=Sa_none;
   ub1 laid = 0xff;
   char c;
@@ -341,7 +341,7 @@ static void __attribute__ ((format (printf,9,10))) diafln(
   const struct seinfo *eip=nil;
   const enum Symbol *sp;
 
-  if ( (rowcnt++ & 31) == 0) infofln(hi32,"%-19s lvl rule           ve si sym            ti tk","");
+  if ( (rowcnt++ & 31) == 0) infofln(hi32,"%-19s lvl prod           se si sym            ti tk","");
 
   switch (ve) {
   case Pcount:  c = 'i'; break;
@@ -358,7 +358,7 @@ static void __attribute__ ((format (printf,9,10))) diafln(
     }
   }
 
-  pos = mysnprintf(buf,0,256,"%2u %-14.12s %2u %u %-14.12s %2u %c%-8.6s",lvl,ntnam(r),ve,si,symnam(s),ti,c,tknam(tk,0));
+  pos = mysnprintf(buf,0,256,"%2u %-14.12s`z %2u %u %-14.12s %2u %c%-8.6s",lvl,prodnam(ve,tk),se,si,symnam(s),ti,c,tknam(tk,0));
 //  pos += mysnprintf(buf,pos,256," %02x",bits);
 
   buf[pos++] = laid != 0xff ? '?' : ' ';
@@ -513,9 +513,9 @@ rulstart:
   if (ti >= tcnt) goto eof;
 
 // select production
-  sdia(lsp,ti,s,r,lvl,ve,si,"pos %u select",tkpos[ti]);
-
   ai = syntabeas[ve];
+
+  sdia(lsp,ti,s,r,lvl,ve,si,"pos %u select ai %x",tkpos[ti],ai);
 
   if (ai & Sa_s0) {
     ti++;
@@ -527,7 +527,7 @@ rulstart:
 
   cp = ep->ctls;
 
-  sdia(lsp,ti,*sp,r,lvl,ve,si,"se '%s'",stinfo[se].src);
+  sdia(lsp,ti,*sp,r,lvl,ve,si,"se '%s' len %u",stinfo[se].src,ai & 0xf);
 
 // --- match production
   si = (ai >> 4) & 3;
@@ -575,7 +575,7 @@ nxtsym:
 #ifdef Lacnt
       if (nxve >= Plaid && nxve < Pendrep) { // lookahead
         laid = nxve - Plaid;
-        lan = lasetn[laid];
+        lan = lasetn[laid] - 1;
         tk1 = tks[ti+1];
         tkbit = 1UL << tk1;
 
@@ -701,7 +701,7 @@ nxtsym:
 
       } else { // nonmatch term
 
-        info("tk %u.%s ti %u s %u.%s si %u/%u",tk,tknam(tk,0),ti,s,symnam(s),si,len);
+//        info("tk %u.%s ti %u s %u.%s si %u/%u",tk,tknam(tk,0),ti,s,symnam(s),si,len);
         sdia(lsp,ti,s,r,lvl,se,si,"nonmatch term %s z %x",tknam(tk,0),z);
 
         if (repc == Crep01 || repc == Crep0n) si++; // common case
@@ -719,6 +719,7 @@ nxtsym:
 
     } // term
 
+//    info("si %u/%u",si,len);
   } while (si < len); // each sym in clause
 
 // ------------
@@ -790,7 +791,7 @@ endsym:
       sdia(lsp,ti,s,r,lvl,nxse,si,"end rep on %u tk %s %u",se,tknam(tk,0),nxse);
     }
   } else {
-    info("reppm %u isrep %u",reppm,isrep);
+    // info("reppm %u isrep %u",reppm,isrep);
   }
 
   if (lvl == 0) {

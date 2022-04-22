@@ -681,7 +681,7 @@ static bool mk12(enum Fset pass,ub2 iter)
         dlti = dhti = 1;
 
         dodir = (si + 1 == slen && zr == Crep11);
-        dobenamb = (zr == Crep11);
+        dobenamb = ena_benambi && (zr == Crep11);
 
         tkcnt=0;
         if (s < T99_count) { // regular token
@@ -762,11 +762,11 @@ static bool mk12(enum Fset pass,ub2 iter)
               }
               prx = rxp;
             } // each tf
-          }
-
+          } // second
         } // nonterm
 
-        for (i = 0; i < tkcnt; i++) { // terms
+        // terms
+        for (i = 0; i < tkcnt; i++) {
           t = tks[i];
           if (pass == Fs_term) {
             tfp[t]  |= abit;
@@ -776,7 +776,7 @@ static bool mk12(enum Fset pass,ub2 iter)
               if (firstra[t] == hi16) {
                 firstra[t] = r | a8;
                 firstrn[t] = 0;
-                firstrc[t] = (si == slen - 1 ? 1 : 3);
+                firstrc[t] = (si == slen - 1 && z == Crep11 ? 1 : 3);
               } else firstrc[t] = 3; // block on ambi
             }
 
@@ -945,13 +945,13 @@ static bool doentry(struct rule *rp,struct sentry *ep,ub1 *sp,ub1 *cp,ub2 len,bo
     z = cp[si];
     islp = (z & Crepmask) == Creplp;
     if (islp && len > 1 && si < len-1) serror(lnx,"rule %s: duplicate end of rep",rp->name);
-    if (s >= T99_count && s <= T99_count + rulcnt) {
+    if (s >= T99_count && s < T99_count + rulcnt) {
       if (islp) serror2(lnx,rp->id,s,"si %u +x repeat on nonterm",si);
       rxp = rules + s - T99_count;
       if (rxp->rulrep) z &= Cargmask;
       s = rul2nrul[s - T99_count] + T99_count;
     }
-//    svrb2(rp->lno|Lno,rp->id,s,"si %u z %x",si,z);
+//    svrb2(rp->lno|Lno,rp->id,s,"%u si %u z %x",s,si,z);
     ds[si] = s;
     dc[si] = z;
   }
@@ -1180,7 +1180,7 @@ static int mktables(void)
           tra = rxp->firstra[tk];
           tfra[cnt] = tra;
           tfrn[cnt] = rxp->firstrn[tk];
-          tfnc[cnt] = rxp->firstrc[tk];
+          tfnc[cnt] = (si + 1 == slen && repc == Crep11 ? rxp->firstrc[tk] : 3);
           tks[cnt++] = tk;
         }
         if (cnt == 0) serror2(lnx,r,T99_count,"no first for alt %u rule %s",a,rxp->name);
@@ -2633,7 +2633,7 @@ static int wrfile(void)
   ub1 typsiz;
   ub2 hinamlen = max(hintnamlen,Tknamlen);
   ub2 prdnamwid;
-  ub1 maxlen=0,hisi=0;
+  ub1 maxlen=0,hise=0;
   ub2 spos=0,sposz=0;
   char spool[Spool];
   ub2 sposs[256];
@@ -2784,6 +2784,13 @@ static int wrfile(void)
     if (lno == 0) serror(lno|Lno,"stab ndx %u is empty",se);
     len = ep->len;
     if (len == 0) serror(lno|Lno,"stab ndx %u is empty",se);
+    if (len > maxlen) { maxlen = len; hise = se; }
+  }
+
+  for (se = 0; se < stablen; se++) {
+    ep = syntab + se;
+    lno = ep->lno;
+    len = ep->len;
     a = ep->alt;
     sp = ep->syms;
     cp = ep->ctls;
@@ -2886,7 +2893,7 @@ static int wrfile(void)
 
     myfprintf(&sfp," }%s\n",se < stablen - 1 ? ",\n" : "");
   }
-  myfprintf(&sfp,"};\n\n// max len %u for %u\n#define Syn_maxlen %u\n\n",maxlen,hisi,maxlen);
+  myfprintf(&sfp,"};\n\n// max len %u for %u\n#define Syn_maxlen %u\n\n",maxlen,hise,maxlen);
 
   myfprintf(&sfp,"#undef R0n\n#undef Rlp\n#undef R01\n");
   for (i = 1; i <= higrpdif; i++) {
@@ -2895,9 +2902,9 @@ static int wrfile(void)
 
   if (hastidctl) myfprintf(&sfp,"#undef Is0\n#undef Is1\n#undef Idf\n#undef Irf\n");
 
-  ep = syntab + hisi;
+  ep = syntab + hise;
   rp = rules + ep->nt0;
-  info("max len %u for %u %.*s",maxlen,hisi,rp->dsclen[ep->alt],rp->desc + ep->alt * Dsclen);
+  info("max len %u for %u %.*s",maxlen,hise,rp->dsclen[ep->alt],rp->desc + ep->alt * Dsclen);
 
   // myfprintf(&sfp,"// for diags\nstatic const enum Nterm prodrules[%u] = { %s };\n\n",stablen,buf1);
   poolsizes += stablen;
