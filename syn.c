@@ -492,9 +492,13 @@ int syn(struct lexsyn *lsp)
   ub2 *iddefs = alloc(idcnt,ub2,0xff,"syn id defs");
 #endif
 
-  ub4 estndcnt = tcnt;
+  ub4 estndcnt;
 
-  for (grp = 1; grp < Tkgrps; grp++) estndcnt -= lsp->tkgrps[grp];
+#if Tkgrp > 1
+  estndcnt = lsp->tkgrps[0];
+#else
+  estndcnt = tcnt;
+#endif
 
   nodemem.inc = 512;
   nodemem.ini = 64;
@@ -583,7 +587,7 @@ nxtsym:
     if (++itercnt > iterlim) ice(0,fpos,"iter lim %u",iterlim);
 
     tk = tks[ti];
-    vrb("tk %u.%s ti %u si %u/%u",tk,tknam(tk,0),ti,si,len);
+    // vrb("tk %u.%s ti %u si %u/%u",tk,tknam(tk,0),ti,si,len);
 
     s = sp[si];
     z = cp[si];
@@ -737,7 +741,7 @@ nxtsym:
         sdia(lsp,ti,s,r,lvl,se,si,"nonmatch term %s z %x",tknam(tk,0),z);
 
         if (repc == Crep01 || repc == Crep0n) si++; // common case
-        else if (repc == Creplp) { vrb("ti %u",ti); reppm = 0; goto endsym; } // end rep
+        else if (repc == Creplp) { reppm = 0; goto endsym; } // end rep
         else {
           repcc = repc >> Crepshift;
           if (repcc) {

@@ -125,6 +125,20 @@ static ub2    tkrefs[Ntok];
 static ub2    hitknamlen;
 static ub1    tkhigrp;
 
+#define Nkwd 128
+static ub2 nkwd,ntkwd;
+static cchar *kwds[Nkwd];
+static ub1 kwlens[Nkwd];
+static ub1 kwgrps[Nkwd];
+static ub1 kwlnos[Nkwd];
+static ub1 havekwlens[Kwnamlen];
+
+static cchar *tkwds[Nkwd];
+static ub1 tkwlens[Nkwd];
+static ub1 tkwdmap[Nkwd];
+
+static ub2 hikwlen,mikwlen,lokwlen=255,hitkwlen;
+
 #define Nact 32
 #define Actlen 2048
 static ub2 nact;
@@ -482,36 +496,24 @@ static ub2 addset(ub2 ln,bool mul,const ub1 *nam,ub2 nlen,const ub1 *val,ub2 vle
 }
 
 #define err(tp,st,fmt,...) errfln(FLN,tp,st,fmt,__VA_ARGS__)
-#define Bufsiz 256
+// #define Bufsiz 256
 
 static Noret void __attribute__ ((format (printf,4,5))) errfln(ub4 shfln,const struct trans *tp,ub1 st,const char *fmt,...)
 {
   va_list ap;
-  char buf[Bufsiz];
+  ub4 len = 256;
+  char buf[256];
   cchar *stnam = states[st];
   ub2 slen = stlens[st];
 
   va_start(ap,fmt);
-  myvsnprint(buf,0,Bufsiz,fmt,ap);
+  myvsnprint(buf,0,len,fmt,ap);
   va_end(ap);
 
   if (tp) serrorfln(shfln,tp->ln | Lno,"pat '%s' state %.*s: %s",tp->pat,slen,stnam,buf);
   else errorfln(shfln,0,"state %.*s: %s",slen,stnam,buf);
   doexit(1);
 }
-
-#define Nkwd 128
-static ub2 nkwd,ntkwd;
-static cchar *kwds[Nkwd];
-static ub1 kwlens[Nkwd];
-static ub1 kwlnos[Nkwd];
-static ub1 havekwlens[Kwnamlen];
-
-static cchar *tkwds[Nkwd];
-static ub1 tkwlens[Nkwd];
-static ub1 tkwdmap[Nkwd];
-
-static ub2 hikwlen,mikwlen,lokwlen=255,hitkwlen;
 
 static ub1 getkwd(cchar *name,ub1 len)
 {
@@ -533,7 +535,7 @@ static ub4 hashstr(cchar *p,ub2 len,ub4 hc)
   return hashalstr(buf,len,hc);
 }
 
-static void addkwd1(ub2 ln,cchar *name,ub1 len)
+static void addkwd1(ub2 ln,cchar *name,ub1 len,ub1 grp)
 {
   ub2 pos = nkwd;
 
@@ -544,6 +546,7 @@ static void addkwd1(ub2 ln,cchar *name,ub1 len)
   kwds[pos] = name;
   kwlnos[pos] = ln;
   kwlens[pos] = len;
+  kwgrps[pos] = grp;
   if (len > hikwlen) hikwlen = len;
   if (len < lokwlen) lokwlen = len;
   havekwlens[len]++;
@@ -551,7 +554,7 @@ static void addkwd1(ub2 ln,cchar *name,ub1 len)
   nkwd = pos + 1;
 }
 
-static void addkwd(ub2 ln,cchar *name,ub2 len)
+static void addkwd(ub2 ln,cchar *name,ub2 len,ub1 grp)
 {
   cchar *n,*eq,*sep;
   ub1 ll;
@@ -563,12 +566,12 @@ static void addkwd(ub2 ln,cchar *name,ub2 len)
     tkwdmap[ntkwd] = pos;
     tkwds[ntkwd] = name;
     tkwlens[ntkwd++] = len;
-    addkwd1(ln,name,len);
+    addkwd1(ln,name,len,grp);
     return;
   } else if (eq == name || eq == name + len - 1) serror(ln|Lno,"invalid kwd '%.*s'",len,name);
 
   n = name; ll = eq - name;
-  addkwd1(ln,eq+1,len - ll - 1);
+  addkwd1(ln,eq+1,len - ll - 1,grp);
   while (ll) {
     sep = memchr(n,'|',ll);
     tkwdmap[ntkwd] = pos;
@@ -886,7 +889,7 @@ static int mktables(void)
 
 enum Specstate { Sout,Scmt,Spcmt,
   Svarnam,Svarnam1,Svarval,
-  Skwd0,Skwd,Skwd1,
+  Skwd0,Skwd,Skwd1,Skwd2,
   Stoknam0,Stoknam,Stoknam1,Stokgrp,
   Sstate0,Sstate1,Sstate2,Sstate3,
   Spat0,Spat1,Spat2,Snxstate0,Snxstate1,
@@ -1359,7 +1362,7 @@ static int rdspec(cchar *fname)
   ub1 st00,st=0,st0 = nstate;
   enum Ctype t;
   ub1 tk=0;
-  ub1 grp;
+  ub1 grp=0;
   ub2 kw;
   ub2 blt;
   ub2 dun;
@@ -1538,14 +1541,26 @@ static int rdspec(cchar *fname)
         blt = getblt(buf+kwdnam0,slen);
         if (blt < nblt) serror(kwdnam0,"%.*s already defined as bltin at line %u",slen,buf+kwdnam0,bltlnos[blt]);
 
-        if (sv == Sv_kwd) addkwd(lno,buf+kwdnam0,slen);
+        if (sv == Sv_kwd && t != Cws) addkwd(lno,buf+kwdnam0,slen,0);
         else if (sv == Sv_bltin) addblt(lno,buf+kwdnam0,slen);
       }
 
-      if (t == Cnl) xst = Skwd0; else { xst = Scmt; xst2 = Skwd0; }
+      if (t == Cnl) xst = Skwd0;
+      else if (t == Cws && sv == Sv_kwd) { xst = Skwd2; grp = 0; }
+      else { xst = Scmt; xst2 = Skwd0; }
       break;
     default:   serror(n,"expected %s, found %c",svnames[sv],c);
     }
+  break;
+
+  case Skwd2:
+  switch (t) {
+  case Cws: break;
+  case Cnum: grp = c - '0'; break;
+  case Cnl:  addkwd(lno,buf+kwdnam0,slen,grp); xst = Skwd0; break;
+  case Chsh: addkwd(lno,buf+kwdnam0,slen,grp); xst = Scmt; xst2 = Skwd0; break;
+  default:   serror(n,"expectedgrp digit, found %c",c);
+  }
   break;
 
   case Sset0:
@@ -2510,7 +2525,7 @@ static int wrfile(void)
   cchar *nst;
   cchar *p;
   ub1 t;
-  ub1 grp;
+  ub1 grp,logrp;
   ub2 len,inclen,minlen,nlen;
   ub2 c;
   ub2 ccnt,tcnt,ucnt,ocnt,loopc1;
@@ -2758,6 +2773,12 @@ static int wrfile(void)
       } else {
         myfprintf(&lhfp,"#define setkwd(T,t,k) T = k\n\n");
       }
+      myfprintf(&lhfp,"static const ub1 kwgrps[%u] = { ",nkwd);
+        for (i = 0; i < nkwd; i++) {
+          if (i) myfputc(&lhfp,',');
+          myfprintf(&lhfp,"%u",kwgrps[i]);
+        }
+        myfprintf(&lhfp," };\n\n");
     }
     if (nblt) {
       myfprintf(&lhfp,"#define Bltcnt %u\n",nblt);
@@ -3087,7 +3108,7 @@ static int wrfile(void)
         }
         nam = "99_count";
         nlen = 8;
-        grp = 0;
+        grp = 0; logrp = 0xff;
         if (ctbl[t] != 0xff) {
           tp = transtab + ttbl[t];
           tk = tp->tk;
@@ -3095,6 +3116,7 @@ static int wrfile(void)
             nlen = toklens[tk];
             nam = toks[tk];
             grp = tokgrps[tk];
+            if (grp < logrp) logrp = grp;
           }
         }
         tkpos += mysnprintf(tkbuf,tkpos,tklen,"T%.*s",nlen,nam);
@@ -3107,7 +3129,7 @@ static int wrfile(void)
 
     if (pass2 && tktabcnt) {
       myfprintf(&lfp,"\nstatic ub1 tktab%c_%s[%u] = { %.*s };\n\n ",passc,st0nam,hitktab+1,tkpos,tkbuf);
-      myfprintf(&lfp,"\nstatic ub1 tkgtab%c_%s[%u] = { %.*s };\n\n ",passc,st0nam,hitktab+1,tkgpos,tkgbuf);
+      myfprintf(&lfp,"\nstatic ub1 tkgtab%c_%s[%u] = { %.*s }; // low %u\n\n ",passc,st0nam,hitktab+1,tkgpos,tkgbuf,logrp);
     }
 
     // each state
@@ -3249,7 +3271,7 @@ static int wrfile(void)
             if (pass2) {
               bpos += mysnprintf(buf,bpos,blen,"tks[dn] = T%.*s; tkfpos[dn] = n; ",toklens[tk],toks[tk]);
               grp = tokgrps[tk];
-              if (grp) bpos += mysnprintf(buf,bpos,blen,"tkgrps[%u]++; ",grp);
+              if (tkhigrp && grp == 0) bpos += mysnprintf(buf,bpos,blen,"tkgrps[%u]++; ",grp);
             }
             bpos += mysnprintf(buf,bpos,blen,"dn++;\n  ");
           }
@@ -3331,12 +3353,12 @@ static int wrfile(void)
       bpos += mysnprintf(buf,bpos,blen,"\nlx%c_%s_gentk_%u:\n  ",passc,st0nam,st0);
       if (pass2) {
         bpos += mysnprintf(buf,bpos,blen,"tks[dn] = tktab%c_%s[t]; tkfpos[dn] = n; ",passc,st0nam);
-        bpos += mysnprintf(buf,bpos,blen,"tkgrps[tkgtab%c_%s[t]]++;\n",passc,st0nam);
+        if (tkhigrp && logrp == 0) bpos += mysnprintf(buf,bpos,blen,"tkgrps[tkgtab%c_%s[t]]++; ",passc,st0nam);
       }
       if (pass2) {
         if (addtrace) bpos += mysnprintf(buf,bpos,blen,"tracetk2(%u,tktab%c_%s[t]);\n",lno,passc,st0nam);
       }
-      bpos += mysnprintf(buf,bpos,blen,"  dn++; goto lx%c_%s%s;\n",passc,st0nam,pass1 && addtrace ? "_1" : "");
+      bpos += mysnprintf(buf,bpos,blen," dn++; goto lx%c_%s%s;\n",passc,st0nam,pass1 && addtrace ? "_1" : "");
     }
 
     myfprintf(&lfp,"  %.*s\n",bpos,buf);

@@ -29,24 +29,24 @@ token
   nlit
   slit
   id
-  co
-  cc
-  ro
-  rc
+  co 1
+  cc 1
+  ro 1
+  rc 1
 #  so
 #  sc
-  qas
+  qas 1
 #  aas
 #  das
 #  mulas
-  colon
-  sepa
+  colon 1
+  sepa 1
 #  comma
 #  dot
 #  exp
-  ast
-  pm
-  op
+  ast 1
+  pm 1
+  op 1
 
 set
   af _a-zA-Z
@@ -81,7 +81,7 @@ set
 keyword
 #  and
 #  as
-  break
+  break 1
 #  continue
 #  def
 #  del
@@ -196,7 +196,7 @@ id
 1 idnplen += len;
 1 exp_first0(hc);
 2 kw = lookupkw(len,hc);
-2 if (kw < t99_count) { setkwd(tk,tkbits[dn],kw); }
+2 if (kw < t99_count) { setkwd(tk,tkbits[dn],kw); if (Tkgrp > 1) tkgrps[kwgrps[tk]]++; }
 2 else {
 2   tk = Tid;
 2   blt = lookupblt(len,hc);
