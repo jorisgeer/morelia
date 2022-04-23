@@ -313,7 +313,6 @@ static void msg(ub4 shfln,enum Msglvl lvl,cchar *srcnam,ub4 lno,ub4 col,cchar *f
 void msglog(cchar *fnam,cchar *fext,cchar *desc)
 {
   char path[Fname];
-  char bckpath[Fname];
   ub1 x;
 
   if (logfd >= 0) {
@@ -348,7 +347,7 @@ static ub4 fpos9;
 struct fnaminf *getsrcmfile(void)
 {
   if (fnaminfos.inc == 0) icefln(FLN,0,hi32,"msg not inited");
-  struct fnaminf *mf = (struct fnaminf *)minalloc(sizeof(struct fnaminf),8,0);
+  struct fnaminf *mf = (struct fnaminf *)minalloc(sizeof(struct fnaminf),8,0,"filnam");
 
   struct fnaminf **mfp = blkexp(&fnaminfos,1,struct fnaminf *);
   ub4 *poss = blkexp(&fnampos,1,ub4);
@@ -766,9 +765,7 @@ void eximsg(void)
   if (ecnt) {
     if (ecnt > 1 || msgseq - errseq > 5) showcnt("error",ecnt);
     if (msgseq - errseq > 5) info("  last %s",lasterr);
-  }
-
-  if (wcnt) {
+  } else if (wcnt) {
     if (wcnt > 1 || msgseq - warnseq > 5) showcnt("warning",wcnt);
     if (msgseq - warnseq > 5) info("  last %s",lastwarn);
   }

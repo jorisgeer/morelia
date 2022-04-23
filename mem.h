@@ -45,8 +45,8 @@ struct mempart {
 
 #define allocset(part,cnt,fil,desc,cntr) allocset_fln(MFLN,part,cnt,fil,desc,cntr)
 
-#define minalloc(n,a,f) minalloc_fln(MFLN,(n),(a),(f))
-#define medalloc(n,a) medalloc_fln(MFLN,(n),(a))
+#define minalloc(n,a,fil,dsc) minalloc_fln(MFLN,(n),(a),(fil),dsc)
+#define medalloc(n,a,dsc) medalloc_fln(MFLN,(n),(a),dsc)
 #define blkexp(xp,c,t) (t *)blkexp_fln(FLN,(xp),(c),sizeof(t))
 
 #if defined __GNUC__ || defined  __clang__
@@ -64,8 +64,8 @@ extern void afree_fln(ub4 fln,void *p,const char *desc,ub2 counter);
 
 extern void *allocset_fln(ub4 fln,struct mempart *parts,ub2 npart,ub2 fil,const char *desc,ub2 counter);
 
-extern Mallike void *minalloc_fln(ub4 fln,ub4 n,ub2 align,ub2 fil);
-extern Mallike void *medalloc_fln(ub4 fln,ub4 n,ub2 align);
+extern Mallike void *minalloc_fln(ub4 fln,ub4 n,ub2 align,ub2 fil,cchar *desc);
+extern Mallike void *medalloc_fln(ub4 fln,ub4 n,ub2 align,cchar *desc);
 
 extern ub1 *blkexp_fln(ub4 fln,struct expmem *xp,ub4 cnt,ub4 typsiz);
 

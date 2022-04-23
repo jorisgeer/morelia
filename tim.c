@@ -53,7 +53,7 @@ static void initime(void)
   ub2 *dim;
 
   jd = (Erayear - Epochyear) * 366;
-  jultab = (ub2 *)minalloc(jd,2,hi16);
+  jultab = (ub2 *)minalloc(jd,2,hi16,"time jultab");
 
   // create julian day to calendar dates table, supporting typically 50 years
   // mktime() is hardly useful as it refers to a fixed system TZ.

@@ -520,8 +520,7 @@ void myfopen(struct bufile *f,ub4 len,bool perm)
   f->top = len;
 
   f->perm = perm;
-  if (perm) f->buf = medalloc(len,8);
-  else f->buf = alloc(len,ub1,Mo_nofill,f->nam,nextcnt);
+  f->buf = alloc(len,ub1,Mo_nofill,f->nam,nextcnt);
   f->fd = -1;
 }
 
@@ -641,8 +640,10 @@ ub4 *mklntab(cchar *p,ub4 n,ub4 *pcnt)
   for (i = 0; i < n; i++) if (p[i] == '\n') cnt++;
   if (cnt == 0) return nil;
   cnt++;
-  if (cnt < 1024) tab = minalloc(cnt * 4,4,Mo_nofill);
-  else tab = medalloc(cnt * 4,4);
+
+  // todo
+  if (cnt < 1024) tab = minalloc(cnt * 4,4,Mo_nofill,"lintab");
+  else tab = medalloc(cnt * 4,4,"lintab");
 
   cnt = 0;
   for (i = 0; i < n; i++) {
@@ -688,12 +689,18 @@ ub1 check_version(ub4 chk,ub4 ver)
   c2 = chk;
 
   // major
-  if (v0 < c0) return 1;
+  if (v0 < c0) return 0;
   else if (v0 > c0) return z & 4;
   else {
+    if (z & 4) return 1;
     if (v1 < c1) return 0;
     else if (v1 > c1) return z & 2;
-    else return 1;
+    else {
+      if (z & 2) return 1;
+      if (v2 < c2) return 0;
+      else if (v1 > c1) return z & 1;
+      else return 1;
+    }
   }
 }
 

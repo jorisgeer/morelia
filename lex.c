@@ -482,8 +482,8 @@ static void mkid2tab(void) {
   id2nch2 = nxpwr2(n2,&id2shift2);
   id2mask1 = id2nch1-1;
   id2mask2 = id2nch2-1;
-  id2tab = (ub2 *)minalloc(id2nch1 * id2nch2 * 2,2,0xff);
-  id2nams = (ub2 *)minalloc(id2nch1 * id2nch2 * 2,2,Mo_nofill);
+  id2tab = (ub2 *)minalloc(id2nch1 * id2nch2 * 2,2,0xff,"lex id2tab");
+  id2nams = (ub2 *)minalloc(id2nch1 * id2nch2 * 2,2,Mo_nofill,"lex id2nam");
 }
 
 static void mkslithash(ub4 cnt)
@@ -904,7 +904,8 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
     while(n < slen && sp[n] != '\n') n++;
   }
 
-  if (slen < 0x4000) { idnampool = minalloc(slen,4,Mo_nofill); idnplen1 = 0; }
+  // todo
+  if (slen < 0x4000) { idnampool = minalloc(slen,4,Mo_nofill,"lex idnampool"); idnplen1 = 0; }
   else { idnampool = osmmap(slen,ub1); idnplen1 = slen; }
   idnampos = 4;
 
@@ -994,18 +995,21 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
     slitpool = alloc(slittop,ub1,Mo_nofill,"lex slit pool",nextcnt);
   }
 
-  if (idnplen1) idnampool = osmremap(idnampool,ub1,idnplen1,idnplen);
+  if (idcnt && idnplen1) idnampool = osmremap(idnampool,ub1,idnplen1,idnplen);
+  else osmunmap(idnampool,idnplen1);
   idnampos = 4;
 
-  mkidhash(uidcnt,idcnt);
-  mkid2tab();
+  if (idcnt) {
+    mkidhash(uidcnt,idcnt);
+    mkid2tab();
+  }
 
-  mkslithash(slitcnt);
+  if (slitcnt) mkslithash(slitcnt);
 
   slitpos = 4;
 
   lncnt += 2;
-  lntab = lncnt < 1024 ? minalloc(lncnt * 4,4,Mo_nofill) : medalloc(lncnt * 4,4);
+  lntab = lncnt < 1024 ? minalloc(lncnt * 4,4,Mo_nofill,"lex lntab") : medalloc(lncnt * 4,4,"lex lntab");
 
   setsrcmfile(mf,lntab,lncnt,n);
 
@@ -1042,7 +1046,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   if (verbose) timeit2(&T1,slen,"pass 2 tokenised ` in");
 
   showcnt("3token",tkcnt);
-  showcnt("3lines",l);
+  showcnt("3line",l);
 
   showcnt("bltin",bltcnt);
   showcnt("dunder",duncnt);
@@ -1127,7 +1131,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
     serror(n,"no matching '%c'",bolvlc[0]);
   }
 
-  afree(idhsh,"lex id hash",nextcnt);
+  if (idhsh) afree(idhsh,"lex id hash",nextcnt);
 
   if (globs.rununtil < 3) { info("until pass 2 %u",globs.rununtil); return 1; }
 
@@ -1211,7 +1215,7 @@ int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *l
   osclose(fd);
   if (nr != slen) { error("partial read %'uB of %'uB of %s",(ub4)nr,(ub4)slen,path); return 1; }
 
-  ipath = minalloc(n+1,1,Mo_nofill);
+  ipath = minalloc(n+1,1,Mo_nofill,"lex inc path");
   memcpy(ipath,path,n);
   ipath[n] = 0;
 
