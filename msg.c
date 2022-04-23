@@ -729,7 +729,11 @@ void timeit2fln(ub4 fln,ub8 *pt0,ub4 n,cchar *mesg)
   if (rem) pos += mysnprintf(buf,pos,256,".%u",y4 / 10);
   pos += mysnprintf(buf,pos,256," %ssecond%.*s",pfx,x4 != 1,"s");
 
-  if (n > 1024) mysnprintf(buf,pos,256," %u` / %csec",(ub4)npx,u);
+  if (n > 1024) {
+    if (u == 'm') { npx *= 1000; u = ' '; }
+    else if (u == 'u') { npx *= 1000000; u = ' '; }
+    mysnprintf(buf,pos,256," ~ %u` / %csec",(ub4)npx,u);
+  }
 
   msg(fln,Info,nil,0,0,buf,nil);
 }

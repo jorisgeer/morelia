@@ -81,12 +81,6 @@ struct diamod dia_lex = { dianames,dialvls,Diatag_count };
 
 #define Slitint 256
 
-#define Idctl_1   0xe0000000
-#define Idctl_2   0xc0000000
-#define Idctl_blt 0xa0000000
-#define Idctl_dun 0x80000000
-#define Idctl_cls 0x60000000
-
 enum Esc { Esc_inv,Esc_nl,Esc_o,Esc_x,Esc_u,Esc_U,Esc_N,Esc_a=7,Esc_b,Esc_t,Esc_n,Esc_v,Esc_f,Esc_r };
 
 static enum Esc esctab[256];
@@ -455,7 +449,7 @@ static ub2 id2getadd(ub1 c1,ub1 c2)
   return id2cnt++;
 }
 
-static ub2 id2nam(ub2 id)
+ub2 id2nam(ub2 id)
 {
   ub2 ndx = id2nams[id];
   ub2 a,b;
@@ -733,9 +727,6 @@ static ub4 doescu(const ub1 * restrict src,ub4 sn,ub1 *pool,ub4 *plitx,ub1 ctl)
 
 #define Dent 256
 
-#define Litflt (1U << 31)
-#define Litasc (1U << 30)
-
 enum Slitctl { Slit_none,Slit_f=1,Slit_r=2,Slit_l=4,Slit_b=8,Slit_u=16 };
 
 #define B32max (1U << 30)
@@ -751,7 +742,7 @@ static void doemit(struct lexsyn *lsp,cchar *name)
   const ub4 *tkbits = lsp->tkbits;
   const ub4 *tkfpos = lsp->tkpos;
   ub4 tkcnt = lsp->tkcnt;
-  cchar *slitpool = lsp->slitpool;
+  const ub1 *slitpool = lsp->slitpool;
 
   bool emit = (globs.emit & 1);
   enum Token tk=0;
@@ -786,7 +777,7 @@ static void doemit(struct lexsyn *lsp,cchar *name)
                   else pos += mysnprintf(buf,pos,len,"%u",x4);
                 }
                 break;
-    case Tslit: if (x4 < hi24) pos += mysnprintf(buf,pos,len,"%3x '%.32s'",x4,chprints(slitpool + x4));
+    case Tslit: if (x4 < hi24) pos += mysnprintf(buf,pos,len,"%3x '%s'",x4,chprints(slitpool + x4),32);
                 break;
     default:    break;
     }
@@ -820,7 +811,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   ub1 grp;
 
   // str lits
-  char *slitpool=nil;
+  ub1 *slitpool=nil;
   ub4 slitx=0;
   ub4 idxpos=0;
 

@@ -138,45 +138,52 @@ const enum Ctype Ctab[256] = {
   [';'] = Cother,
 };
 
-cchar *chprint(ub1 c)
+static ub2 dochprint(ub1 c,ub1 *p)
 {
-  static ub1 buf[4 * 8];
-  ub1 *p;
-  static ub2 bufno;
-
-  bufno = (bufno + 1) & 3;
-  p = buf + bufno * 8;
-
   if (Ctab[c] == 0) {
     p[0] = '0';
     p[1] = 'x';
     p[2] = hextab[c >> 4];
     p[3] = hextab[c & 0xf];
-    p[4] = 0;
+    return 4;
   } else if (c < 0x0e) {
     c = esctab[c - 7];
-    p[0] = '\\'; p[1] = c; p[2] = 0;
+    p[0] = '\\'; p[1] = c;
+    return 2;
   } else if (c == '\\') {
-    p[0] = '\\'; p[1] = c; p[2] = 0;
+    p[0] = '\\'; p[1] = c;
+    return 2;
   } else {
-    *p = c; p[1] = 0;
+    *p = c;
+    return 1;
   }
+}
+
+cchar *chprint(ub1 c)
+{
+  static ub1 buf[4 * 8];
+  ub1 *p;
+  ub2 n;
+  static ub2 bufno;
+
+  bufno = (bufno + 1) & 3;
+  p = buf + bufno * 8;
+
+  n = dochprint(c,p);
+  p[n] = 0;
   return (cchar *)p;
 }
 
-const ub1 *chprints(const ub1 *s)
+const ub1 *chprints(const ub1 *s,ub2 n)
 {
-  ub4 pos=0,len = 252;
+  ub4 pos=0,len = min(252,n);
   ub1 c;
   const ub1 *q;
   static ub1 buf[256];
 
   while ( (c=*s++) && pos < len ) {
     if (Ctab[c] && c >= ' ') buf[pos++] = c;
-    else {
-      q = (const ub1 *)chprint(c);
-      do buf[pos++] = *q; while (*++q);
-    }
+    else pos += dochprint(c,buf+pos);
   }
   buf[pos] = 0;
   return buf;

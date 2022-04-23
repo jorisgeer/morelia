@@ -2965,7 +2965,7 @@ static int wrfile(void)
   myfprintf(&sfp,"#define Stbl_tklen %u\n",ntok2);
   if (ntok2 != ntok) myfprintf(&sfp,"// from %u\n",ntok);
 
-  myfprintf(&sfp,"\nstatic const ub1 prdsel[Ncount * Stbl_tklen] = { // %u * %u = %u",nrulcnt,ntok2,nrulcnt * ntok2);
+  myfprintf(&sfp,"\nstatic const enum Production prdsel[Ncount * Stbl_tklen] = { // %u * %u = %u",nrulcnt,ntok2,nrulcnt * ntok2);
 
   sb2 prdnamwid2 = -(prdnamwid);
 

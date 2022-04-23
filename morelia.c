@@ -63,7 +63,7 @@ static ub2 incspos;
 static int docc(const ub1 *src,ub4 slen,bool isfile)
 {
   int rv;
-  ub8 T0 = 0;
+  ub8 T0 = 0,T1 = 0;
 
   ls.incdircnt = incdircnt;
   ls.incdirs = incdirs;
@@ -88,7 +88,11 @@ static int docc(const ub1 *src,ub4 slen,bool isfile)
 
   if (inisyn()) return 1;
 
+  timeit(&T1,nil);
+
   rv = syn(&ls);
+
+  timeit2(&T1,ls.srclen,"parse took ");
 
   timeit2(&T0,ls.srclen,"lex + parse took ");
 

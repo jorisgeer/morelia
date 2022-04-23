@@ -214,19 +214,19 @@ int oswrite(int fd,const char *buf,ub4 len)
 
 int oswrite8(int fd, const char *buf,size_t len,unsigned long *nwrit)
 {
-  ssize_t rrx,rx = 0;
+  ssize_t rx;
   size_t nw=0,chk;
 
   *nwrit = 0;
   while (len) {
     if (fd > 2 && globs.sigint) return 1;
     chk = min(len,1024UL * 1024 * 1024);
-    do rrx = write(fd,buf,chk); while (rrx == -1 && errno == EINTR);
-    if (rrx == -1) return -1;
-    else if (rrx == 0) return 1;
-    nw += (size_t)rrx;
-    buf += rrx;
-    len -= (size_t)rrx;
+    do rx = write(fd,buf,chk); while (rx == -1 && errno == EINTR);
+    if (rx == -1) return -1;
+    else if (rx == 0) return 1;
+    nw += (size_t)rx;
+    buf += rx;
+    len -= (size_t)rx;
   }
   *nwrit = nw;
   return 0;
@@ -234,19 +234,19 @@ int oswrite8(int fd, const char *buf,size_t len,unsigned long *nwrit)
 
 int osread8(int fd,char *buf,size_t len,unsigned long *nread)
 {
-  ssize_t rrx,rx = 0;
+  ssize_t rx;
   size_t nr=0,chk;
   *nread = 0;
 
   while (len) {
     if (globs.sigint) return 1;
     chk = min(len,1024UL * 1024 * 1024);
-    do rrx = read(fd,buf,chk); while (rrx == -1 && errno == EINTR);
-    if (rrx == -1) return -1;
-    else if (rrx == 0) return 1;
-    nr += (size_t)rrx;
-    buf += rrx;
-    len -= (size_t)rrx;
+    do rx = read(fd,buf,chk); while (rx == -1 && errno == EINTR);
+    if (rx == -1) return -1;
+    else if (rx == 0) return 1;
+    nr += (size_t)rx;
+    buf += rx;
+    len -= (size_t)rx;
   }
   *nread = nr;
   return 0;
@@ -292,7 +292,7 @@ char *getoserr(ub4 *perrno)
 {
   int e = errno;
 
-  *perrno = (ub4)e;
+  if (perrno) *perrno = (ub4)e;
   return e ? strerror(errno) : "";
 }
 
@@ -351,9 +351,9 @@ void *osmremapfln(ub4 fln,void *p,size_t elsiz,ub4 oldel,ub4 newel)
   void *np;
 
   if (nlen == olen) {
-    warnfln(fln,"os.%u void realloc %lu * %u",__LINE__,elsiz,oldel);
+    warnfln(fln,"os.%u redundant realloc %lu * %u",__LINE__,elsiz,oldel);
     return p;
-  }
+  } else if (nlen == 0) ice(fln,hi32,"os.%u  realloc to nil %lu * %u",__LINE__,elsiz,oldel);
 
 #ifdef _GNU_SOURCE
 

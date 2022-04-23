@@ -61,9 +61,11 @@ struct node {
 
 #define Depth 128
 
+#define Emitdetail
+
 #define Trace
 
-static bool dotrace = 1;
+static bool dotrace = 0;
 
 static cchar *tknam(enum Token tk,ub4 bits)
 {
@@ -92,7 +94,8 @@ static cchar *tknam(enum Token tk,ub4 bits)
     if (len == 0) return toknampool + toknampos[tk];
     p = hrtoknams + tk * 4;
     q = buf;
-    hc >>= 4;
+    if (bits == hi32) hc = 0;
+    else hc >>= 4;
     while (len--) {
       if (hc & 1) *q = bits & 0xf;
       else *q = *p;
@@ -105,7 +108,7 @@ static cchar *tknam(enum Token tk,ub4 bits)
   return buf;
 }
 
-static cchar *mrgnam(ub2 m,const char *sep)
+static cchar *mrgnam(ub2 m,char sep)
 {
   ub4 mrg = 1U << m;
   enum Token t;
@@ -119,7 +122,8 @@ static cchar *mrgnam(ub2 m,const char *sep)
 
   for (t = 0; t < T99_count; t++) {
     if (tkmrgtab[t] & mrg) {
-      pos += mysnprintf(buf,pos,len,"%.*s'%s'",pos,sep,tknam(t,hi32));
+      if (pos) buf[pos++] = sep;
+      pos += mysnprintf(buf,pos,len,"%s",tknam(t,hi32));
     }
   }
   return buf;
@@ -135,7 +139,7 @@ static cchar *symnam(enum Symbol s)
 {
   if (s < Stoken) return tknam((enum Token)s,0);
   else if (s < Smrgset) return ntnam(s - Stoken);
-  else if (s < Scount) return mrgnam(s - Smrgset,"|");
+  else if (s < Scount) return mrgnam(s - Smrgset,'|');
   else return "Seof";
 }
 
@@ -278,7 +282,7 @@ static void ser(ub4 shfln,
 
       if (si0 == si) pos2 = pos;
       if (s < Smrgset) pos += mysnprintf(buf,pos,len,"%s%c ",symnam(s),repsym[s]);
-      else pos += mysnprintf(buf,pos,len,"%s%c ",mrgnam(s - Smrgset,","),repsym[s]);
+      else pos += mysnprintf(buf,pos,len,"%s%c ",mrgnam(s - Smrgset,','),repsym[s]);
       if (repsym[s] == ' ') repsym[s] = '1';
       else { repsym[s]++; haverep = 1; }
       repc = z & Crepmask;
@@ -328,9 +332,11 @@ static void __attribute__ ((format (printf,9,10))) diafln(
   ub4 bits      = tkbits[ti];
   ub4 fpos      = tkpos[ti];
 
-  char buf[256];
+  ub4 len = 512;
+  char buf[512];
   ub2 lno=0;
-  ub2 pos;
+  ub2 pos,opos;
+  ub2 x2;
   ub2 se=0;
   enum Satrs atr=Sa_none;
   ub1 laid = 0xff;
@@ -358,19 +364,43 @@ static void __attribute__ ((format (printf,9,10))) diafln(
     }
   }
 
-  pos = mysnprintf(buf,0,256,"%2u %-14.12s`z %2u %u %-14.12s %2u %c%-8.6s",lvl,prodnam(ve,tk),se,si,symnam(s),ti,c,tknam(tk,0));
+  //                          lvl  prdnam    se  si symnam   ti     tk
+  pos = mysnprintf(buf,0,len,"%2u %-14.12s`z %2u %u %-14.12s %2u %c%-8.6s",lvl,prodnam(ve,tk),se,si,symnam(s),ti,c,tknam(tk,0));
 //  pos += mysnprintf(buf,pos,256," %02x",bits);
+
+#ifdef Emitdetail
+    opos = pos;
+    switch (tk) {
+    case Tid:   if (bits & Idctl_1) buf[pos++] = bits & 0xff;
+                else if (bits & Idctl_2) {
+                  x2 = id2nam(bits & hi16);
+                  buf[pos++] = x2 & 0xff; buf[pos++] = x2 >> 8;
+                } else pos += mysnprintf(buf,pos,len,"%.7s",lsp->idnampool + bits);
+                break;
+    case Tnlit: if (bits & Litflt) {
+                  pos += mysnprintf(buf,pos,len,"%x flt",bits & ~Litflt);
+                } else {
+                  if (bits & Litasc) pos += mysnprintf(buf,pos,len,"%.7s",lsp->nlitpool + (bits & ~Litasc));
+                  else pos += mysnprintf(buf,pos,len,"%u",bits);
+                }
+                break;
+    case Tslit: if (bits < hi24) pos += mysnprintf(buf,pos,len,"%s",chprints(lsp->slitpool + bits,6));
+                break;
+    default:    break;
+    }
+    while(pos < opos + 8) buf[pos++] = ' ';
+#endif
 
   buf[pos++] = laid != 0xff ? '?' : ' ';
   buf[pos++] = (atr & Sa_rep) ? '*' : ' ';
 
-  if (pnam) pos += mysnprintf(buf,pos,256," %-10.8s`z ",pnam);
-  pos += mysnprintf(buf,pos,256,"%3u ",lno);
+  if (pnam) pos += mysnprintf(buf,pos,len," %-10.8s`z ",pnam);
+  pos += mysnprintf(buf,pos,len,"%3u ",lno);
 
   if (ep) {
     sp = ep->syms;
-    if (si) pos += mysnprintf(buf,pos,256,"%-10.8s ",symnam(sp[si-1]));
-    pos += mysnprintf(buf,pos,256,"%-10.8s ",symnam(sp[si]));
+    if (si) pos += mysnprintf(buf,pos,len,"%-10.8s ",symnam(sp[si-1]));
+    pos += mysnprintf(buf,pos,len,"%-10.8s ",symnam(sp[si]));
   }
 
   // if (tk == Tid && bits < hi24) pos += mysnprintf(buf,pos,256,"'%.16s' ",lsp->idnampool + bits);
@@ -408,6 +438,7 @@ int syn(struct lexsyn *lsp)
   // main parser stack
   ub1 ves[Depth];
   ub1 sis[Depth];
+  ub1 rls[Depth];
 
   // synthesized args aka attributes
   // token index or node index
@@ -497,7 +528,7 @@ int syn(struct lexsyn *lsp)
   memset(sis,0xff,Depth); // mark max depth
   lvl = 0;
 
-  info("parsing %u tokens",tcnt);
+  info("parsing %u`  tokens",tcnt);
   si = 0;
 
   ve = startve;
@@ -597,12 +628,13 @@ nxtsym:
 
       if (nxve < Ptablen) { // regular match -> push into new rule
 
-        sdia(lsp,ti,s,r,lvl,nxve,si,"push into %s ve %u",ntnam(nxr),nxve);
+        sdia(lsp,ti,s,r,lvl,nxve,si,"push %u into %s ve %u",ve,ntnam(nxr),nxve);
 
         if (lvl + Skip >= Depth) ice(fpos,0,"exceeding %u nesting depth",lvl);
 
         sis[lvl] = si; // (repc == Crep0n ? si : si + 1);
         ves[lvl] = ve;
+        rls[lvl] = r;
         lvl++;
 
         ve = nxve;
@@ -663,7 +695,7 @@ nxtsym:
     if (s < Stoken || s >= Smrgset) { // term
 
       if (match) {
-        sdia(lsp,ti,s,r,lvl,se,si,"match term %u len %u",z,len);
+        sdia(lsp,ti,s,r,lvl,ve,si,"match term %u len %u",z,len);
 
 #ifdef Tidctl
         idc = z & Cidmask; // handle typedef-id
@@ -765,6 +797,8 @@ endsym:
 
   nid = ni - 1;
 
+  // info("reppm %u isrep %u ve %u",reppm,isrep,ve);
+
   if (reppm) { // repeat rule
     repcnt = repcnts[lvl];
     if (repcnt == 0) nids[lvl] = nid;
@@ -780,15 +814,15 @@ endsym:
       ve = nxve;
       ai = syntabeas[nxve];
       nxse = vprdmap[nxve];
-      sdia(lsp,ti,s,r,lvl,nxse,si,"repeat on %u",se);
+      sdia(lsp,ti,s,r,lvl,nxse,si,"repeat on %u.%u",ve,se);
       si = (ai >> 4) & 3;
       argn[0] = argn[1] = argn[2] = 0;
       if (ai & Sa_s0) ti++;
+      isrep = ai & Sa_rep;
       goto nxtsym;
 
     } else { // nonmatch at end of rep -> always ok end
-      nxse = vprdmap[nxve];
-      sdia(lsp,ti,s,r,lvl,nxse,si,"end rep on %u tk %s %u",se,tknam(tk,0),nxse);
+      sdia(lsp,ti,s,r,lvl,nxve,si,"end rep on %u tk %s %u",se,tknam(tk,0),nxse);
     }
   } else {
     // info("reppm %u isrep %u",reppm,isrep);
@@ -804,6 +838,7 @@ endsym:
   lvl--;
   si = sis[lvl];
   ve = ves[lvl];
+  r  = rls[lvl];
 
   ai = syntabeas[ve];
 
@@ -843,7 +878,7 @@ endsym:
     si++;
   }
 
-  sdia(lsp,ti,s,r,lvl,se,si,"pop into %u lvl %u",r,lvl);
+  sdia(lsp,ti,s,r,lvl,se,si,"pop into %u lvl %u",se,lvl);
 //  info("se %u si %u s %u",se,si,sp[si]);
 
   reppm = isrep;

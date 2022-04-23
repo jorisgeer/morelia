@@ -34,7 +34,7 @@ struct lexsyn {
   cchar *src;
   ub4 srclen;
 
-  cchar *slitpool;
+  const ub1 *slitpool;
   ub4 slittop;
 
   cchar *nlitpool;
@@ -52,10 +52,20 @@ struct lexsyn {
 
 #define Tkpad 10
 
+#define Idctl_1   0xe0000000
+#define Idctl_2   0xc0000000
+#define Idctl_blt 0xa0000000
+#define Idctl_dun 0x80000000
+#define Idctl_cls 0x60000000
+
+#define Litflt (1U << 31)
+#define Litasc (1U << 30)
+
 enum Inctype { Inone,Isys,Iuser };
 
 extern int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *lsp,ub8 T0);
 extern int lexstr(const unsigned char * restrict str,ub2 slen,struct lexsyn *lsp,ub8 T0);
+extern ub2 id2nam(ub2 id);
 
 extern void inilex(void);
 extern cchar *lex_info(void);

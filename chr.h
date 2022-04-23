@@ -20,7 +20,7 @@
  */
 
 extern cchar *chprint(ub1 c);
-extern const ub1 *chprints(const ub1 *s);
+extern const ub1 *chprints(const ub1 *s,ub2 n);
 extern ub2 underline(char *buf,ub2 len);
 
 enum Packed8 Ctype { Calpha=1,Cnum,Cdot,Cws,Cnl,Chsh,Cpls,Cmin,Cast,Csq,Cdq,Cqst,Ccomma,Crdo,Crdc,Cbs,Cbtk,Cor,Ceq,Cother };
