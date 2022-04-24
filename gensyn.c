@@ -186,8 +186,6 @@ static ub2  mrgcnt;
 static ub2 mrgbits[T99_count];
 static ub1 tmpbits[T99_count];
 
-static bool tkdefarg[T99_count];
-
 static ub2 laseq;
 static ub8 laseconds[Lacnt * T99_count * Laset];
 
@@ -228,6 +226,8 @@ static cchar *tknam2(enum Token tk,bool hr)
   }
   return buf;
 }
+
+static bool tkdefarg(enum Token t) { return (t > T99_kwd && t <= T99_grp0); }
 
 static cchar *tknam(enum Token tk) { return  tknam2(tk,0); }
 
@@ -776,7 +776,7 @@ static bool mk12(enum Fset pass,ub2 iter)
               if (firstra[t] == hi16) {
                 firstra[t] = r | a8;
                 firstrn[t] = 0;
-                firstrc[t] = (si == slen - 1 && z == Crep11 ? 1 : 3);
+                firstrc[t] = (si == slen - 1 && zr == Crep11 ? 1 : 3);
               } else firstrc[t] = 3; // block on ambi
             }
 
@@ -983,7 +983,7 @@ static ub2 addirtok(enum Token tk,ub2 rul,ub2 alt)
   ub2 len;
   ub4 lnx = rules[rul].lno|Lno;
 
-  if (tkdefarg[tk]) { // to be stored as arg
+  if (tkdefarg(tk)) { // to be stored as arg
     dtr = dir1tkruls;
     dt = dir1tks;
     if (d >= Dirprd) {
@@ -1404,7 +1404,6 @@ static int mktables(void)
 
 enum Specstate { Sout,Scmt,Smcmt,
   Svarnam,Svarnam1,Svarval,
-  Snodes,Snodes1,Snodes2,
   Srule0,Srule1,Srule2,Srule3,
   Spat0,Spat1,Spat2,Spat3,Spat4,Spat5,Scount
 };
@@ -1419,7 +1418,7 @@ static char specxdate[64];
 
 static char startrulnam[Specvlen];
 
-enum Specvar { Sv_version,Sv_author,Sv_date,Sv_requires,Sv_lang,Sv_start,Sv_nodes,Sv_table,Sv_count };
+enum Specvar { Sv_version,Sv_author,Sv_date,Sv_requires,Sv_lang,Sv_start,Sv_table,Sv_count };
 
 static const char *svnames[Sv_count] = {
  [Sv_version] = "version",
@@ -1428,8 +1427,7 @@ static const char *svnames[Sv_count] = {
  [Sv_requires] = "requires",
  [Sv_lang] = "language",
  [Sv_start] = "start",
- [Sv_table] = "table",
- [Sv_nodes] = "nodes"
+ [Sv_table] = "table"
 };
 
 static ub2 svfpos[Sv_count];
@@ -1457,7 +1455,6 @@ static enum Specvar getvar(ub2 lno,cchar *src,ub2 nam0,ub2 nam1)
         switch (sv2) {
         case Sv_start:    lvl = Error; break;
         case Sv_date:     lvl = Vrb; break;
-        case Sv_nodes:
         case Sv_version:
         case Sv_author:
         case Sv_requires: lvl = Info; break;
@@ -1477,7 +1474,7 @@ static enum Specvar getvar(ub2 lno,cchar *src,ub2 nam0,ub2 nam1)
 
   switch (sv) {
   case Sv_count: serrorfln(FLN,lno|Lno,"unknown var '%.*s'",namlen,src+nam0);
-  case Sv_table: case Sv_nodes:
+  case Sv_table:
   case Sv_version:
   case Sv_author:
   case Sv_date:
@@ -1728,7 +1725,6 @@ static int rdspec(cchar *fname,const ub1 *src)
     switch (sv) {
     case Sv_count: st = Scmt; break; // unknown
     case Sv_table: st = Srule0; addrules(src,n,lno); break;
-    case Sv_nodes: st = Snodes; idnam0 = 0; break;
     default:       if (t == Cnl) serror(n,"missing value for var %.*s",n-varnam0,src+varnam0);
                    st = Svarnam1;
     }
@@ -1747,46 +1743,6 @@ static int rdspec(cchar *fname,const ub1 *src)
       st = Sout;
     }
   break;
-
-  case Snodes:
-    switch (t) {
-    case Cws:    st = Snodes1; break;
-    case Cnl:    break;
-    case Chsh:   st = Scmt; nxst = Snodes; break;
-    case Calpha: varnam0 = n; varnam1 = 0; st = Svarnam; break;
-    default:     serror(n,"expected token name, found '%s'",chprint(c));
-    }
-    break;
-
-  case Snodes1:
-    dorng=0;
-    switch (t) {
-    case Cws:     break;
-    case Cnl:     st = Snodes; break;
-    case Cmin:    dorng = 1; break;
-    case Calpha:  idnam0 = n; idnam1 = 0; st = Snodes2; break;
-    default:      break;
-    }
-    break;
-
-  case Snodes2:
-    switch (t) {
-    case Calpha: case Cnum: break;
-    case Cws:
-    case Cnl: idnam1 = n; break;
-    default: serror(n,"expected map char, found '%s'",chprint(c));
-    }
-    if (idnam1) {
-      idnlen = idnam1 - idnam0;
-      tk = gettoken(src+idnam0,idnlen);
-      if (tk == T99_count) serror(n,"unknown token '%.*s'",idnlen,src+idnam0);
-      if (dorng) {
-        for (tk2 = T99_kwd; tk2 < tk; tk2++) tkdefarg[tk2] = 1;
-      } else tkdefarg[tk] = 1;
-      if (t == Cnl) st = Snodes;
-      else { nxst = Snodes; st = Scmt; }
-    }
-    break;
 
   // table
   case Srule0: // start of rule
@@ -2039,7 +1995,7 @@ static int rdspec(cchar *fname,const ub1 *src)
 
         if (tmpbits[tk]) serror(n,"duplicate token %s",tknam(tk));
         tmpbits[tk] = 1;
-        if (tkdefarg[tk] && argc == 0) argc = ++argn;
+        if (tkdefarg(tk) && argc == 0) argc = ++argn;
         if (pos < 8) {
           nam = tknam(tk);
           buf[pos++] = *nam & 0xdf; buf[pos++] = nam[1];
@@ -2073,7 +2029,7 @@ static int rdspec(cchar *fname,const ub1 *src)
       tk = gettoken(src+symnam0,symlen);
       if (tk == T99_count) serror2(n,nt0,0xff,"unknown token '%.*s'",symlen,src+symnam0);
 
-      if (tkdefarg[tk] && argc == 0) argc = ++argn;
+      if (tkdefarg(tk) && argc == 0) argc = ++argn;
       s = tk;
       tkrefs[tk] = lno;
       dscpos += mysnprintf(dsc,dscpos,Dsclen,"%c%.16s",dola ? '?' : ' ',tknam2(tk,1));
@@ -2497,7 +2453,7 @@ static void wrprd(struct bufile *fp)
   cchar *comma;
   char *pnam;
   ub1 atr,a,si;
-  ub2 ve,se,r,i;
+  ub2 ve,se,r,i,r8;
   struct rule *rp;
   struct sentry *ep;
   ub2 n,pos1=0,pos2=0,pos3=0,pos4=0;
@@ -2520,6 +2476,7 @@ static void wrprd(struct bufile *fp)
     r = ep->nt0;
     rp = rules + r;
     a = ep->alt;
+    r8 = r << 8;
 
     // prod name
     pnam = prdnams + ve * Prdnam;
@@ -2541,7 +2498,7 @@ static void wrprd(struct bufile *fp)
     buf3[pos3++] = '\n';
 
     // prdmap
-    pos4 += mysnprintf(buf4,pos4,len4,"%s%u",comma,se);
+    pos4 += mysnprintf(buf4,pos4,len4,"%s0x%x",comma,se | r8);
 
     pos1 += len;
   }
@@ -2549,7 +2506,7 @@ static void wrprd(struct bufile *fp)
   myfprintf(fp,"static const char prodnampool[%u] = \n  \"%s\";\n\n",pos1,buf1);
   myfprintf(fp,"static const ub2 prodnampos[%u] = { %s };\n\n",vtablen,buf2);
 
-  myfprintf(fp,"static const ub1 vprdmap[%u] = { %s };\n\n",vtablen,buf4);
+  myfprintf(fp,"static const ub2 vprdmap[%u] = { %s };\n\n",vtablen,buf4);
 
   myfprintf(fp,"// s0.1 rep.1 re1.1 si.2 len.4 \n");
   myfprintf(fp,"static const ub1 syntabeas[%u] = {\n%.*s};\n\n",vtablen,pos3,buf3);
@@ -2689,29 +2646,6 @@ static int wrfile(void)
 
   myfprintf(&sfp,"static const char ntnampool[%u] = \"%.*s\";\n\n",spos,spos,spool);
   poolsizes += spos;
-
-  tk1 = tk2 = tk3 = T99_count;
-  for (tk = 0; tk < T99_count; tk++) {
-    if (tkdefarg[tk]) {
-      info("tk def %s",tknam(tk));
-      if (tk1 == T99_count) tk1 = tk;
-      tk2 = tk;
-    } else {
-      if (tk1 != T99_count && tk3 == T99_count) tk3 = tk;
-    }
-  }
-
-  if (tk3 < tk2) {
-    myfprintf(&sfp,"static const ub1 deftoks[%u] = { ",T99_count - tk1);
-    for (tk = tk1; tk <= tk2; tk++) myfprintf(&sfp,"%.*s%u",tk,",",tkdefarg[tk-tk1]);
-  }
-
-  if (tk1 == tk2) myfprintf(&sfp,"#define isdeftok(t) %c\n\n",tk1 == T99_count ? '0' : '1');
-  else {
-    myfprintf(&sfp,"static inline bool isdeftok(enum Token t) { ");
-    if (tk3 < tk2) myfprintf(&sfp,"return deftoks[t-%s]; }\n\n",tknam(tk1));
-    else myfprintf(&sfp,"return t >= T%s && t <= T%s; } // %u %u\n\n",tknam(tk1),tknam(tk2),tk1,tk2);
-  }
 
   myfprintf(&sfp,"enum %sSymbol { // %u\n  ",packed8,mrgcnt + T99_count + nnterm);
   for (tk = 0; tk < T99_count; tk++) {
@@ -3094,7 +3028,7 @@ static struct cmdopt cmdopts[] = {
 //  { "Winfo",' ',Co_Winfo,"list","comma-separated list of diags to report as info" },
   { "",'u',      Co_uncond, "",         "unconditional write" },
   { "until", ' ',Co_until, "%espec,gen,out", "process until <pass>" },
-  { nil,0,0,"<spec> <syntab>","gensyn"}
+  { nil,0,0,"<spec> <syntab> <syndef>","gensyn"}
 };
 
 static int cmdline(int argc, char *argv[])

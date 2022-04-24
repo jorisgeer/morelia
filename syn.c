@@ -49,7 +49,7 @@ static ub4 msgfile = Shsrc_syn;
 #endif
 
 struct node {
-  enum Production se;
+  enum Production ve;
 
   ub1 acnt;
   ub1 lvl;
@@ -438,7 +438,6 @@ int syn(struct lexsyn *lsp)
   // main parser stack
   ub1 ves[Depth];
   ub1 sis[Depth];
-  ub1 rls[Depth];
 
   // synthesized args aka attributes
   // token index or node index
@@ -471,8 +470,8 @@ int syn(struct lexsyn *lsp)
   enum Symbol s=0;
   enum Ctl z,repc,repcc,argc;
   enum Nterm nxr=0,r=startrule;
-  enum Production se=0,nxse;
-  ub1 ve,nxve;
+  ub2 se=0,nxse,x2;
+  enum Production ve,nxve;
   ub1 ai;
   const enum Ctl *cp=nil;
 
@@ -504,7 +503,7 @@ int syn(struct lexsyn *lsp)
   nodemem.ini = 64;
   nodemem.elsiz = sizeof(struct node);
 
-  ub4 nodlim = estndcnt;
+  ub4 nodlim = estndcnt * 2;
 
   ndargs = alloc(nodlim * 2,ub4,Mo_nofill,"node args",nextcnt);
   ndargns = alloc(nodlim * 2,ub2,Mo_nofill,"node args",nextcnt);
@@ -555,7 +554,7 @@ rulstart:
   if (ai & Sa_s0) {
     ti++;
   }
-  se = vprdmap[ve];
+  se = vprdmap[ve] & 0xff;
 
   ep = syntab + se;
   sp = ep->syms;
@@ -638,7 +637,6 @@ nxtsym:
 
         sis[lvl] = si; // (repc == Crep0n ? si : si + 1);
         ves[lvl] = ve;
-        rls[lvl] = r;
         lvl++;
 
         ve = nxve;
@@ -651,20 +649,23 @@ nxtsym:
 
         argp = args  + lvl * Nodarg;
 
-        if (isdeftok(tk)) {
+        if (tk <= T99_grp0 && tk > T99_kwd) {
           argn[0] = 1; argp[0] = ti;
         } else argn[0] = 0;
 
         goto rulstart;
 
-      } else if (nxve < Pendrep) { // direct match -> nonterm
-        sdia(lsp,ti,s,r,lvl,se,si,"direct match, node %u",ni);
+      } else if (nxve < P1dirtok) { // direct match as arg -> nonterm
+        sdia(lsp,ti,s,r,lvl,se,si,"direct match, node %2u",ni);
 
-        if (argc) {
-          argc--;
-          if (argn[argc] == 0) argp[argc] = ti;
-          argn[argc]++;
-        }
+        if (argn[0] == 0) argp[0] = ti;
+        argn[0]++;
+
+        if (repc != Crep0n) si++;
+        ti++;
+
+      } else if (nxve < Plaid) { // idem, no arg
+        sdia(lsp,ti,s,r,lvl,se,si,"direct match, node %2u arg",ni);
 
         if (repc != Crep0n) si++;
         ti++;
@@ -764,7 +765,7 @@ endsym:
 
   if (argn[0]) {
 
-    sdia(lsp,ti,s,r,lvl,se,si,"node %u",ni);
+    sdia(lsp,ti,s,r,lvl,se,si,"node %2u",ni);
 
     if (ni + 1 >= nodemem.top) {
   //    maxndcnt += Ndchk;
@@ -791,7 +792,7 @@ endsym:
       }
     }
 
-    np->se = se;
+    np->ve = ve;
     np->acnt = argcnt;
     napos += argcnt;
 
@@ -818,7 +819,7 @@ endsym:
       ve = nxve;
       ai = syntabeas[nxve];
       nxse = vprdmap[nxve];
-      sdia(lsp,ti,s,r,lvl,nxse,si,"repeat on %u.%u",ve,se);
+      sdia(lsp,ti,s,Ncount,lvl,nxse,si,"repeat on %u.%u",ve,se);
       si = (ai >> 4) & 3;
       argn[0] = argn[1] = argn[2] = 0;
       if (ai & Sa_s0) ti++;
@@ -842,11 +843,12 @@ endsym:
   lvl--;
   si = sis[lvl];
   ve = ves[lvl];
-  r  = rls[lvl];
 
   ai = syntabeas[ve];
 
-  se = vprdmap[ve];
+  x2 = vprdmap[ve];
+  se = x2 & 0xff;
+  r = x2 >> 8;
 
   ep = syntab + se;
   sp = ep->syms;
@@ -865,7 +867,7 @@ endsym:
 
   if (argc) {
     argc--;
-    info("ni %u argc %u",ni,argc);
+    // info("ni %u argc %u",ni,argc);
     n = argn[argc];
     if (argn[argc] == 0 && reppm == 0) { // store first occurence
       nids[lvl] = nid;
@@ -873,7 +875,10 @@ endsym:
     } else {
       nid = nids[lvl];
     }
-    if (argcnt) nodes[ni-1].sib = nid;
+    if (argcnt) {
+      nodes[ni-1].sib = nid;
+      nodes[nid].sib = ni - 1;
+    }
     if (reppm) argns[argc] = repcnt;
     else argns[argc] = n+1;
   }
@@ -895,7 +900,8 @@ endsym:
   eof:
 
   info("ti %u bits %x",ti,tkbits[ti]);
-  info("%u nodes",ni);
+  showcnt("node",ni);
+  showcnt("arg",napos);
 
   hilvl = 0;
   while (hilvl < Depth && sis[hilvl] != 0xff) hilvl++;
