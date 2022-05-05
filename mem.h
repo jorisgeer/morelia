@@ -9,19 +9,20 @@
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
 
-   mpy is distributed in the hope that it will be useful,
+   Morelia is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU Affero General Public License
    along with this program, typically in the file License.txt
-   If not, see <http://www.gnu.org/licenses/>.
+   If not, see http://www.gnu.org/licenses.
  */
 
 #define MFLN (__LINE__|(ub4)(msgfile << 16))
 
 #define Mo_nofill 256
+#define Mo_ok0 512
 
 struct expmem {
   ub1 *bas;
@@ -42,6 +43,7 @@ struct mempart {
 
 #define alloc(cnt,el,fil,desc,cntr) (el*)alloc_fln(MFLN,(cnt),sizeof(el),(fil),desc,cntr)
 #define afree(ptr,desc,cntr) afree_fln(MFLN,(ptr),desc,cntr)
+#define afree0(ptr,desc,cntr) afree0_fln(MFLN,(ptr),desc,cntr)
 
 #define allocset(part,cnt,fil,desc,cntr) allocset_fln(MFLN,part,cnt,fil,desc,cntr)
 
@@ -61,6 +63,7 @@ struct mempart {
 
 extern Mallike void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter);
 extern void afree_fln(ub4 fln,void *p,const char *desc,ub2 counter);
+extern void afree0_fln(ub4 fln,void *p,const char *desc,ub2 counter);
 
 extern void *allocset_fln(ub4 fln,struct mempart *parts,ub2 npart,ub2 fil,const char *desc,ub2 counter);
 

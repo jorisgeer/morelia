@@ -9,14 +9,14 @@
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
 
-   mpy is distributed in the hope that it will be useful,
+   Morelia is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU Affero General Public License
    along with this program, typically in the file License.txt
-   If not, see <http://www.gnu.org/licenses/>.
+   If not, see http://www.gnu.org/licenses.
  */
 
 #include <stdarg.h>
@@ -38,6 +38,12 @@ static ub4 msgfile = Shsrc_lex;
 #include "dia.h"
 
 #include "lexsyn.h"
+
+// max brackets nesting and indents
+#define Depth 256
+
+// max token stream len
+#define Tokencnt (1U << 24)
 
 // #define Emitdetail
 
@@ -76,14 +82,24 @@ static const char *dianames[Diatag_count] = {
 
 struct diamod dia_lex = { dianames,dialvls,Diatag_count };
 
-// max brackets nesting and indents
-#define Depth 256
-
 #define Slitint 256
 
+#ifdef Lang_stresc
 enum Esc { Esc_inv,Esc_nl,Esc_o,Esc_x,Esc_u,Esc_U,Esc_N,Esc_a=7,Esc_b,Esc_t,Esc_n,Esc_v,Esc_f,Esc_r };
 
-static enum Esc esctab[256];
+static const enum Esc esctab[128] = {
+  ['\n'] = Esc_nl,
+  ['0'] = Esc_o, ['1'] = Esc_o, ['2'] = Esc_o, ['3'] = Esc_o, ['4'] = Esc_o, ['5'] = Esc_o, ['6'] = Esc_o, ['7'] = Esc_o,
+  ['t'] = Esc_t,
+  ['n'] = Esc_n,
+  ['r'] = Esc_r,
+  ['v'] = Esc_v,
+  ['a'] = Esc_a,
+  ['x'] = Esc_x,
+  ['u'] = Esc_u, ['U'] = Esc_U,
+  ['N'] = Esc_N
+};
+#endif
 
 #undef ice
 #define ice(fpos,fmt,...) lxice(FLN,fpos,fmt,__VA_ARGS__)
@@ -472,6 +488,7 @@ static void mkid2tab(void) {
     if (x & 1) { id2ch1map[c] = n1; id2ch1imp[n1++] = c; }
     if (x & 2) { id2ch2map[c] = n2; id2ch2imp[n2++] = c; }
   }
+  if ( (n1 | n2) == 0) return;
   id2nch1 = nxpwr2(n1,&id2shift1);
   id2nch2 = nxpwr2(n2,&id2shift2);
   id2mask1 = id2nch1-1;
@@ -577,14 +594,8 @@ static inline enum token lookupkw(ub1 len,ub4 hc)
   enum token kw;
   const ub1 *nam = idnampool+idnampos;
 
-  if (len >= hikwlen) return t99_count;
-
-  ndx = (hc >> Kwhshbit) ^ hc;
-
-  kw = kwhsh[ndx & Kwhshmask];
-  if (kw == t99_count) return t99_count;
-
-  if (len >= mikwlen) m = 0xf0;
+  if (len > hikwlen) return t99_count;
+  else if (len >= mikwlen) m = 0xf0;
   else m = 0xf;
 
   x = kwhshlut[hc & 0xff]
@@ -593,6 +604,10 @@ static inline enum token lookupkw(ub1 len,ub4 hc)
       | kwhshlut[hc >> 24];
 
   if ( (x & m) != m) return t99_count;
+
+  ndx = (hc >> Kwhshbit) ^ hc;
+  kw = kwhsh[ndx & Kwhshmask];
+  if (kw == t99_count) return t99_count;
 
   if (tkwnamlens[kw] == len && samestr(nam,tkwnampool + tkwnamposs[kw],len)) return kw;
   else return t99_count;
@@ -681,6 +696,7 @@ static int tryopen(cchar *dir,cchar *name,bool need)
   return fd;
 }
 
+#ifdef Lang_stresc
 static ub1 lxatox1(ub1 c)
 {
   ub1 x;
@@ -724,6 +740,7 @@ static ub4 doescu(const ub1 * restrict src,ub4 sn,ub1 *pool,ub4 *plitx,ub1 ctl)
   }
   return sn+1;
 }
+#endif
 
 #define Dent 256
 
@@ -863,8 +880,11 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   memset(id2chr,0,256);
 
   ub1 t=0,u;
+
   ub1 Q = 0;
-  ub4 N=0;
+  ub4 N = 0;
+  ub1 R0 = 0;
+
   ub4 id=0;
   ub1 x1;
 
@@ -887,6 +907,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   ub4 idhilen = 0;
 
   memset(tkgrps,0,sizeof(tkgrps));
+  memset(bolvlc,0,Depth);
 
   pass = 1;
 
@@ -912,6 +933,11 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   infofln(FLN,"-lex1");
 
+  if (dn == 0) {
+    info("%s is empty",lsp->name);
+    return 0;
+  }
+
   tkcnt = dn;
   showcnt("x token",tkcnt);
   showcnt("line",l);
@@ -929,6 +955,8 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   showcnt("2str 3 lit",slit3cnt);
   showcnt("2str x lit",slitxcnt);
 
+  if (slitcnt) mkslithash(slitcnt);
+
   slitcnt += slit1cnt + slit2cnt + slit3cnt + slitxcnt;
 
   if (slitcnt) {
@@ -940,11 +968,14 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   if (idcnt) {
     showcnt("2ident / kwd",idcnt);
-    if (idnplen >= Idctl_2) ice(hi32,"ID literal pool exceeds max %u`B",Idctl_2);
+    if (idnplen >= Idctl_2) ice(n,"ID literal pool exceeds max %u`B",Idctl_2);
     info("idpool %u`B max len %u",idnplen,idhilen);
     idnplen += idhilen + 2;
     idnplen += 5 * (idcnt+1); // align + 0-term
   }
+
+
+  if (tkcnt >= Tokencnt) serror(n,"token count %u exceeds limit %u",tkcnt,Tokencnt);
 
   tkcnt += ilitcnt + flitcnt + slitcnt + slit0cnt + slit1cnt + slit2cnt + slit3cnt + slitxcnt;
   tkcnt += idcnt + id2cnt + id1cnt;
@@ -954,6 +985,8 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   showcnt("2token",tkcnt);
 
+  if (tkcnt >= Tokencnt) serror(n,"token count %u exceeds limit %u",tkcnt,Tokencnt);
+
   uidcnt = exp_est();
   if (idcnt == 0) uidcnt = 0;
 
@@ -961,7 +994,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   showsiz("nlit pool",nlitpos);
 
-  if (globs.rununtil < 2) { info("until pass 1 %u",globs.rununtil); return 1; }
+  if (globs.rununtil == 2) { infofln(FLN,"until lex pass 1"); return 0; }
 
   tkpart[0].nel = tkpart[1].nel = tkpart[2].nel = tkcnt+Tkpad;
   tkpart[0].siz = 4;
@@ -981,7 +1014,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   }
 
   slittop = slitpos;
-  if (slitcnt) {
+  if (slitpos) {
     slittop += 2;
     slitpool = alloc(slittop,ub1,Mo_nofill,"lex slit pool",nextcnt);
   }
@@ -994,8 +1027,6 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
     mkidhash(uidcnt,idcnt);
     mkid2tab();
   }
-
-  if (slitcnt) mkslithash(slitcnt);
 
   slitpos = 4;
 
@@ -1034,7 +1065,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   infofln(FLN,"-lex2");
 
-  if (verbose) timeit2(&T1,slen,"pass 2 tokenised ` in");
+  if (verbose) timeit2(&T1,slen,"pass 2 tokenised `B in");
 
   showcnt("3token",tkcnt);
   showcnt("3line",l);
@@ -1068,7 +1099,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   memset(tks+tkcnt,T99_eof,Tkpad);
 
-#if 1
+#if 0
   kwcnt = 0;
   for (dn = 0; dn < tkcnt; dn++) {
     tk = tks[dn];
@@ -1088,12 +1119,13 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   for (grp = 0; grp < Tkgrp; grp++) {
     cnt = tkgrps[grp];
-    info("grp %u %u",grp,cnt);
+    if (cnt) info("grp %u %u",grp,cnt);
     if (grp < Tkgrps) lsp->tkgrps[grp] = cnt;
   }
 
   if (nlitpos == 0) { if (nlitpool) afree(nlitpool,"lex nlit pool",nextcnt); }
   else { lsp->nlitpool = nlitpool; lsp->nlittop = nlitpos; }
+  lsp->nlitcnt = ilitcnt + flitcnt;
 
   if (slitxcnt) lsp->src = sp;
 
@@ -1105,10 +1137,11 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   lsp->tkbits = tkbits;
   lsp->tkpos = tkfpos;
 
-  lsp->idcnt = idcnt;
+  lsp->idcnt = idcnt + id1cnt + id2cnt;
   lsp->idnampool = idnampool;
 
   lsp->slitpool = slitpool;
+  lsp->slitcnt = slitcnt;
   lsp->slittop = slittop;
 
   lsp->tkbas = tkbas;
@@ -1122,9 +1155,13 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
     serror(n,"no matching '%c'",bolvlc[0]);
   }
 
+  ub2 hidepth = (ub2)((ub1 *)memchr(bolvlc,0,Depth) - bolvlc);
+  info("max depth %u",hidepth);
+  lsp->hidepth = hidepth;
+
   if (idhsh) afree(idhsh,"lex id hash",nextcnt);
 
-  if (globs.rununtil < 3) { info("until pass 2 %u",globs.rununtil); return 1; }
+  if (globs.rununtil == 3) { infofln(FLN,"until lex"); return 0; }
 
   return rv;
 }
@@ -1172,7 +1209,7 @@ int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *l
   }
 
   if (osfdinfo(&ino,fd)) { osclose(fd); errorfln(FLN,0,"cannot get info for %s",path); return 1; }
-  if (ino.len >= (1U << 24)) { osclose(fd); errorfln(FLN,0,"%s length %lu exceeds %u",path,ino.len,1U << 24); return 1; }
+//  if (ino.len >= (1U << 31)) { osclose(fd); errorfln(FLN,0,"%s length %lu exceeds %u",path,ino.len,1U << 31); return 1; }
 
   fb = getsrcmfile();
 
@@ -1196,6 +1233,10 @@ int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *l
   sp = alloc(xlen,char,Mo_nofill,"lex file",nextcnt);
   memset(sp+slen,0,xlen-slen);
 
+  memset(sp,0,slen);
+
+  timeit(&T1,nil);
+
   rv = osread(fd,sp,slen,&nr);
   if (rv) {
     if (rv < 0) oserror("cannot read %s",path);
@@ -1204,7 +1245,7 @@ int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *l
     return 1;
   }
   osclose(fd);
-  if (nr != slen) { error("partial read %'uB of %'uB of %s",(ub4)nr,(ub4)slen,path); return 1; }
+//  if (nr != slen) { error("partial read %'uB of %'uB of %s",(ub4)nr,(ub4)slen,path); return 1; }
 
   ipath = minalloc(n+1,1,Mo_nofill,"lex inc path");
   memcpy(ipath,path,n);
@@ -1224,12 +1265,15 @@ int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *l
   srcnam = path + dirsep;
 
   lsp->srclen = slen;
+
+  if (globs.rununtil == 1) { infofln(FLN,"until file"); return 0; }
+
   rv = lex(fb,sp,slen,lsp,T1);
 
   if (lsp->src == nil) afree(sp,"src",nextcnt);
   msgfls();
 
-  if (rv) return rv;
+  if (rv || lsp->tkcnt == 0) return rv;
 
   timeit2(&T0,slen,"tokenised ` in");
 
@@ -1284,18 +1328,6 @@ void inilex(void)
     ice(0,"lexer inconsistent kwd hash %s: %x versus genlex: %x len %u seed %x '%.*s'",globs.prgnam,hc,kwnamhsh,i,Hshseed,i,tkwnampool);
   }
 #endif
-
-  for (i = '0'; i < '8'; i++) esctab[i] = Esc_o;
-  esctab['\n'] = Esc_nl;
-  esctab['t'] = Esc_t;
-  esctab['n'] = Esc_n;
-  esctab['r'] = Esc_r;
-  esctab['v'] = Esc_v;
-  esctab['a'] = Esc_a;
-  esctab['x'] = Esc_x;
-  esctab['u'] = Esc_u;
-  esctab['U'] = Esc_U;
-  esctab['N'] = Esc_N;
 
   lastcnt
 }

@@ -9,14 +9,14 @@
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
 
-   mpy is distributed in the hope that it will be useful,
+   Morelia is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU Affero General Public License
    along with this program, typically in the file License.txt
-   If not, see <http://www.gnu.org/licenses/>.
+   If not, see http://www.gnu.org/licenses.
  */
 
 /* Memory allocation:
@@ -132,7 +132,7 @@ void *minalloc_fln(ub4 fln,ub4 n,ub2 align,ub2 fill,cchar *dsc)
   }
 
   if (n >= Minchk || n + align >= Minchk) fatal(fln,"not mini %u %s",n,dsc);
-  else if (n == 0) fatal(fln,"zero len %s",dsc);
+  else if (n == 0) fatal(fln,"zero len for '%s'",dsc);
   else if (mintot + n > Minmax) fatal(fln,"mini pool exceeds %u MB %s",Minmax >> 20,dsc);
 
   minpos = align4(minpos,align);
@@ -272,6 +272,7 @@ void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter
   bool ismmap;
 
   if (nelem < mini_thres && elsiz < mini_thres) {
+    if (nelem == 0 && (fil & Mo_ok0) ) return nil;
     n = nelem * elsiz;
     if (n < mini_thres) {
       align = min(elsiz,stdalign);
@@ -389,6 +390,11 @@ void afree_fln(ub4 fln,void *p,const char *desc,ub2 counter)
     osmunmap(p,n);
     subsum(n);
   } else free(p);
+}
+
+void afree0_fln(ub4 fln,void *p,const char *desc,ub2 counter)
+{
+  if (p) afree_fln(fln,p,desc,counter);
 }
 
 void *allocset_fln(ub4 fln,struct mempart *parts,ub2 npart,ub2 fil,const char *desc,ub2 counter)

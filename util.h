@@ -9,14 +9,14 @@
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
 
-   mpy is distributed in the hope that it will be useful,
+   Morelia is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU Affero General Public License
    along with this program, typically in the file License.txt
-   If not, see <http://www.gnu.org/licenses/>.
+   If not, see http://www.gnu.org/licenses.
  */
 
 struct cmdopt { // commandline arg defines
@@ -41,7 +41,8 @@ struct bufile {
   int fd;
   ub1 *buf;
   ub4 pos,mid,top;
-  bool dobck,perm,err;
+  ub1 dobck;
+  bool perm,err;
 };
 
 enum Parsearg { Pa_nil,Pa_eof,Pa_plusmin,Pa_plus1,Pa_min1,Pa_min2,Pa_found,Pa_found2,Pa_genfound,Pa_genfound2,Pa_notfound,Pa_regarg,Pa_noarg };

@@ -9,14 +9,14 @@
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
 
-   mpy is distributed in the hope that it will be useful,
+   Morelia is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU Affero General Public License
    along with this program, typically in the file License.txt
-   If not, see <http://www.gnu.org/licenses/>.
+   If not, see http://www.gnu.org/licenses.
  */
 
 /* This file contains utiity functions that do not deserve their own place
@@ -332,6 +332,7 @@ ub4 bsearch4(ub4 *p,ub4 n,ub4 key,ub4 fln)
     else if (v < key) lo = mid;
     else hi = mid;
   }
+//  infofln(fln,"bsearch iter %u cnt %u lo %u hi %u %u",iter,n,lo,hi,p[mid]);
   return mid; // nearest
 }
 #endif
@@ -380,6 +381,7 @@ ub4 bsearch8(ub8 *p,ub4 n,ub8 key,ub4 fln,const char *desc)
     else if (v < key) lo = mid;
     else hi = mid;
   }
+  infofln(fln,"bsearch iter %u cnt %u lo %u hi %u",iter,n,lo,hi);
   return mid; // nearest
 }
 #endif
@@ -491,14 +493,28 @@ int readpath(struct myfile *mf,const char *dir,const char *name, int mustexist,u
 }
 #endif
 
-static ub4 myflush(struct bufile *f,ub4 n)
+static ub4 myflush(struct bufile *f,ub4 n,bool eof)
 {
   int fd = f->fd;
+  struct myfile mf;
+  ub4 len;
+  cchar *p;
 
   if (n == 0 || f->err) return 0;
 
   if (fd == -1) {
-    if (f->dobck) filebck(f->nam);
+    if (f->dobck) {
+      if (f->dobck == 2 && eof) {
+        if (readfile(&mf,f->nam,0,hi16)) return 0;
+        else if (mf.exist) {
+          len = mf.len;
+          p = mf.buf;
+
+          if (len > 16 && len == n && memcmp(f->buf,p,n) == 0) return 0; // will be equal
+        }
+      }
+      filebck(f->nam);
+    }
     fd = oscreate(f->nam);
     if (fd == -1) { f->err = 1; return 0; }
     f->fd = fd;
@@ -535,7 +551,7 @@ ub4 myfwrite(struct bufile *f,ub1 *src,ub4 n)
   if (buf == nil) ice(0,hi32,"write to unopened %s",f->nam);
 
   if (pos >= mid) {
-    n = myflush(f,mid);
+    n = myflush(f,mid,0);
     if (f->err) return n;
     n = pos - mid;
     if (n) memcpy(buf,f->buf + mid,n);
@@ -558,7 +574,7 @@ void myfputc(struct bufile *f,ub1 c)
   if (buf == nil) ice(0,hi32,"write to unopened %s",f->nam);
 
   if (pos >= mid) {
-    myflush(f,mid);
+    myflush(f,mid,0);
     if (f->err) return;
     n = pos - mid;
     if (n) memcpy(buf,f->buf + mid,n);
@@ -578,7 +594,7 @@ void myfputs(struct bufile *f,cchar *s,ub2 len)
   if (buf == nil) ice(0,hi32,"write to unopened %s",f->nam);
 
   if (pos >= mid) {
-    myflush(f,mid);
+    myflush(f,mid,0);
     if (f->err) return;
     n = pos - mid;
     if (n) memcpy(buf,f->buf + mid,n);
@@ -603,7 +619,7 @@ ub4 __attribute__ ((format (printf,2,3))) myfprintf(struct bufile *f,const char 
   if (fmt == nil || *fmt == 0 || f->err) return 0;
 
   if (pos >= mid) {
-    n = myflush(f,mid);
+    n = myflush(f,mid,0);
     if (f->err) return n;
     n = pos - mid;
     if (n) memcpy(buf,f->buf + mid,n);
@@ -621,8 +637,8 @@ int myfclose(struct bufile *f)
 {
   if (f->err) return 1;
 
-  if (f->pos) myflush(f,f->pos);
-  osclose(f->fd);
+  if (f->pos) myflush(f,f->pos,1);
+  if (f->fd != -1) osclose(f->fd);
   f->fd = -1;
   if (f->perm == 0) afree(f->buf,f->nam,nextcnt);
   return f->err;
@@ -763,7 +779,7 @@ static void show_license(void)
   \n\
   You should have received a copy of the GNU Affero General Public License\n\
   along with this program, typically in the file License.txt\n\
-  If not, see <http://www.gnu.org/licenses/>.\n\n";
+  If not, see http://www.gnu.org/licenses.\n\n";
 
   show_version(0);
 
@@ -821,7 +837,9 @@ void usage(struct cmdopt *opts)
   char buf[4096];
 
   while (op->opt) op++;
-  pos = mysnprintf(buf,0,len,"\n%s\n\nUsage: %s [options] %s\n\nOptions:\n",op->desc,globs.prgnam,op->arg);
+  pos = mysnprintf(buf,0,len,"\n%s\n\nUsage: %s [options]",op->desc,globs.prgnam);
+  if (op->arg) pos += mysnprintf(buf,pos,len," %s  (%u arg%.*s)\n\nOptions:\n",
+    op->arg,op->sname,op->sname,"s");
 
   op = opts;
   while (op->opt | gop->opt) {
