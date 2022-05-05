@@ -9,14 +9,14 @@
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
 
-   mpy is distributed in the hope that it will be useful,
+   Morelia is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU Affero General Public License
    along with this program, typically in the file License.txt
-   If not, see <http://www.gnu.org/licenses/>.
+   If not, see http://www.gnu.org/licenses.
  */
 
 #ifdef Genlex
@@ -55,11 +55,19 @@ tok   . suffix for hr
 
 */
 
+static const bool disabled[128] = {
+#ifdef Lang_stresc
+  ['a'] = 1
+#else
+  ['A'] = 1
+#endif
+};
+
 static ub1 ctab[256];
 static ub1 cctab[256];
 static bool cctab_use;
 
-enum Packed8 Ctl { Cc_c,Cc_t,Cc_u,Cc_q,Cc_x,Cc_e,Cc_z,Cc_a};
+enum Packed8 Ctl { Cc_c,Cc_t,Cc_u,Cc_q,Cc_r,Cc_x,Cc_e,Cc_z,Cc_a};
 
 #define Kwnamlen 16
 #define Bltnamlen 24
@@ -114,7 +122,8 @@ static ub1 stdesclens[Nstate];
 
 #define Ntok 128
 #define Toknam 32
-static ub2    ntok,nltok,grp0tok;
+#define Tkgrp 16
+static ub2    ntok,nltok;
 static cchar *toks[Ntok];
 static char   hrtoks[Ntok * 4];
 static ub1    toklens[Ntok];
@@ -124,8 +133,8 @@ static ub1    tkacts[Ntok];
 static ub2    tkrefs[Ntok];
 static ub2    hitknamlen;
 static ub1    tkhigrp;
-
-static ub1 hitkgrp;
+static ub2    tkngrps[Tkgrp];
+static ub1    hitkgrp;
 
 #define Nkwd 128
 static ub2 nkwd,ntkwd;
@@ -287,7 +296,7 @@ static ub1 addtok(ub2 ln,cchar *name,ub1 len,ub1 grp)
   else chkhsh = hash64(name,len);
   if (len > hitknamlen) hitknamlen = len;
   if (grp > tkhigrp) tkhigrp = grp;
-  else if (grp == 0) grp0tok = nltok;
+  tkngrps[grp] = nltok;
   return nltok++;
 }
 
@@ -332,9 +341,6 @@ static void addactval(ub2 ln,ub2 act,const ub1 *src,ub2 len)
   memcpy(dst,src,len);
   actvlens[act] = actlen + len;
 }
-
-static bool isother(cchar *p) { return memeq(p,"ot",2); }
-static bool iseq(cchar *p) { return memeq(p,"EQ",2); }
 
 static ub2 getset(cchar *p,ub2 len)
 {
@@ -657,11 +663,12 @@ static ub2 addmasks(ub2 tti,ub1 *sp,enum Ctl *cp,ub1 len)
       case Cc_t:
       case Cc_u: ti = addsetmask(tti,p,s); if (ti != hi16) hiti = ti; break;
       case Cc_q: return hi16;
+      case Cc_r: return hi16;
       case Cc_x: ti = addotmask(tti,p); if (ti != hi16) hiti = ti; break;
       case Cc_e: return hi16;
       case Cc_z: ti = p[0]; if (ti != hi16) hiti = ti; else p[0] = tti; break;
       case Cc_a: ti = p[s]; if (ti == hi16) { p[s] = tti; break; }
-                 else { ti = p[s] & 0xdf; hiti = ti; }
+                 else { ti = upcase(p[s]); hiti = ti; }
                  break;
     }
     if (ti == hi16) break;
@@ -676,9 +683,9 @@ static int mktables(void)
   ub1 st,st0;
   ub1 tk;
   const char *p;
-  ub1 *sp;
+  char c,d;
+  ub1 sym,*sp;
   enum Ctl ctl,*cp;
-  char c;
   ub1 t;
   ub2 mix;
   ub2 len;
@@ -747,28 +754,36 @@ static int mktables(void)
     }
 
     while (pi < plen) {
+      c = p[pi]; d = p[pi+1];
       len = plen - pi;
-      if (p[pi] == '`') { // use char, not class
-        pi++;
-        if (pi < plen && p[pi] == '`') { pi++; sp[cclen] = '`'; ctl = Cc_c; }
+      sym = c;
+      ctl = Cc_c;
+      if (c == '`') { // use char, not class
+        if (pi < plen && d == '`') { pi += 2; sym = '`'; }
         else {
+          pi++;
           noset=1;
           continue;
         }
-      } else if (p[pi] == 'Q') {
+      } else if (c == 'Q') { // compare input with current quote
         ctl = Cc_q;
         if (st0 == 0) info("ln %u pat Q",ln);
         pi++;
-      } else if (len >= 2 && isother(p+pi)) {
+      } else if (len >= 2 && c == 'o' && d == 't') { // other
         ctl = Cc_x;
         if (st0 == 0) info("ln %u pat other",ln);
         pi+=2;
-      } else if (len >= 2 && iseq(p+pi)) {
+      } else if (len >= 2 && c == 'E' && d == 'Q') { // equal
         if (pi == 0) err(tp,st0,"EQ at start, pat %.*s",plen,p);
         ctl = Cc_e;
         if (st0 == 0) info("ln %u pat eq",ln);
         pi+=2;
-      } else if (p[pi] == 0) {
+      } else if (len >= 3 && c == 'R') { // compare register against given val
+        if (d == 'R') { pi += 2; sym = 'R'; }
+        else if (d >= '0' && d <= '9' && p[pi+2] >= '0' && p[pi+2] <= '9') {
+          ctl = Cc_r; sym = ((d - '0') << 4) | (p[pi+2] - '0'); pi += 3;
+        } else { pi++; sym = c; }
+      } else if (c == 0) {
         err(tp,st0,"nil pattern char at pos %u",pi);
       } else {
         x2 = getset(p+pi,plen-pi);
@@ -779,10 +794,10 @@ static int mktables(void)
           }
           if (set < nset && noset == 0 && cclen == 0) { // convert to 1-char set
             setrefs[set] = ln;
-            sp[cclen] = set;
+            sym = set;
             ctl = setmuls[set] ? Cc_u : Cc_t;
           } else {
-            sp[cclen] = c;
+            sym = c;
             ctl = Cc_c;
             crefs[c]++;
           }
@@ -792,17 +807,17 @@ static int mktables(void)
           setrefs[set] = ln;
           if (setcase[set]) {
             ctl = Cc_a;
-            sp[cclen] = setval0s[set];
+            sym = setval0s[set];
           } else if (noset) {
             if (setcnts[set] != 1) err(tp,st0,"char override on len %u set %u",setcnts[set],set);
-            c = sp[cclen] = setval0s[set];
-            if (st0 == 0) vrb("ln %u.%u pat '%s' noset for root",ln,cclen,chprint(c));
+            sym = setval0s[set];
+            if (st0 == 0) vrb("ln %u.%u pat '%s' noset for root",ln,cclen,chprint(sym));
             ctl = Cc_c;
           } else if (x2 & 0x8000) { // mul
-            sp[cclen] = set;
+            sym = set;
             ctl = Cc_u;
           } else {
-            sp[cclen] = set;
+            sym = set;
             ctl = Cc_t;
           }
           len = (x2 >> 8) & 0xf;
@@ -812,9 +827,10 @@ static int mktables(void)
       noset=0;
       mix = mix << 3 | ctl;
       if (ctl == Cc_u) cctab_use = 1;
+      sp[cclen]   = sym;
       cp[cclen++] = ctl;
       if (cclen > ccmax) { ccmax = cclen; ccmxv = tp->ln; tpmx = tp; }
-      if (cclen >= Cclen) {
+      if (cclen > Cclen) {
         for (i = 0; i < cclen; i++) {
           info("  type %u val %x",cp[i],sp[i]);
         }
@@ -1389,6 +1405,7 @@ static int rdspec(cchar *fname)
 
   enum Specvar sv = Sv_count;
   ub2 c,c2;
+  bool actena = 1;
 
   if (readfile_pad(&specfile,fname,1,hi24,4,0)) return 1;
 
@@ -1410,7 +1427,7 @@ static int rdspec(cchar *fname)
   ub2 n = 0;
   ub2 varnam0=0,varnam1=0,varval0=0,varval1=0;
   ub2 kwdnam0=0;
-  ub2 slen=0;
+  ub2 slen=0,i;
   ub2 idnam0=0,idnam1=0,idlen;
   ub2 toknam0=0,toknlen=0;
   ub2 setnam0=0,setnam1=0,setnlen=0,setval0=0,setval1=0;
@@ -1674,7 +1691,8 @@ static int rdspec(cchar *fname)
     switch (t) {
     case Cnl: break;
 //    case Cws: break;
-    case Chsh:   xst = Scmt; xst2 = Sact0; break;
+    case Cbtk:   if (disabled[c2]) actena = 0; else n += 2; break;
+    case Chsh:   xst = Scmt; xst2 = Sact0; actena = 1; break;
     case Calpha: actnam0 = n; actnam1=0; xst = Sact1; break;
     default:     serror(n,"expected actnam, found '%s'",chprint(c));
     }
@@ -1693,6 +1711,7 @@ static int rdspec(cchar *fname)
       } else {
         vrb("new act %.*s",slen,buf+actnam0);
         act = addact(lno,buf+actnam0,slen);
+        if (actena == 0) actrefs[act] = lno;
       }
       break;
     default: serror(n,"expected actnam, found %c",c);
@@ -1711,7 +1730,7 @@ static int rdspec(cchar *fname)
     case ' ':
     case '.':  xst = Sact21; break;
     case '#':  xst = Scmt; break;
-    case '\n': xst = Sact0; break;
+    case '\n': xst = Sact0; actena = 1; break;
     case 0:    serror(n,"ln %u unexpected eof",lno);
     default:   serror(n,"expected code prelude, found %c", c);
     }
@@ -1854,6 +1873,7 @@ static int rdspec(cchar *fname)
                    if (c != passc) { xst = Spcmt; }
                  }
                  break;
+    case Cbtk:   if (disabled[c2]) xst = Spcmt; else n++; break;
     case Cnl:    break;
     case Chsh:   if (c2 == '#') goto eof;
                  else { xst = Spcmt; break; }
@@ -2102,8 +2122,14 @@ static int rdspec(cchar *fname)
 
     if (skipact == 0) {
       if (codlen) tp->code[codlen++] = ' ';
-      memcpy(tp->code + codlen,buf + actval0,slen);
-      tp->codlen = codlen + slen;
+      for (i = 0; i < slen; i++) {
+        if (buf[actval0+i] == '#') {
+          if (slen > 1 && buf[actval0+i+1] == '#') i++;
+          else break;
+        }
+        tp->code[codlen++] = buf[actval0+i];
+      }
+      tp->codlen = codlen;
     } else skipact = 0;
     actval0=actval1=0;
     if (t == Cnl) { xst = Spat0; tp++; }
@@ -2251,7 +2277,7 @@ static ub4 wrhsh(struct bufile *lfp,struct bufile *sfp,cchar *pfx,cchar *names[]
   char spool[Spool];
   ub2 sposs[Nkwd];
   char pfx0 = *pfx++;
-  char pfx1 = *pfx & 0xdf;
+  char pfx1 = upcase(*pfx);
   cchar *mpfx = map ? "t" : "";
 
  if (sfp->top) {
@@ -2398,7 +2424,7 @@ static int filediff(cchar *fnam,cchar *buf,ub2 blen)
   ub4 len,n0,n=0,nn;
   cchar *p;
 
-  ub8 binmtim = osfiltim(globs.prgnam);
+  // ub8 binmtim = osfiltim(globs.prgnam);
 
   if (readfile(&mf,shdrname,0,hi16)) return -1;
   else if (mf.exist == 0) {
@@ -2411,7 +2437,7 @@ static int filediff(cchar *fnam,cchar *buf,ub2 blen)
 
   if (len < 16) return 1;
 
-  if (binmtim > mf.mtime) return 1;
+  // if (binmtim > mf.mtime) return 1;
 
   while (n < len && p[n] != '@') n++;
   if (n + 1 >= len) {
@@ -2511,6 +2537,8 @@ static int wrfile(void)
   ub4 blen = Buflen;
   ub2 bpos = 0;
 
+  char buf2[256];
+
   int rv;
 
   ub2 tkpos=0,tkgpos=0;
@@ -2529,7 +2557,7 @@ static int wrfile(void)
   cchar *nst;
   cchar *p;
   ub1 t;
-  ub1 grp,logrp;
+  ub1 grp,logrp=0xff;
   ub2 len,inclen,minlen,nlen;
   ub2 c;
   ub2 ccnt,tcnt,ucnt,ocnt,loopc1;
@@ -2632,8 +2660,13 @@ static int wrfile(void)
       spool[spos++] = '\\';
       spool[spos++] = '0';
       bpos += mysnprintf(buf,bpos,blen,"T%*s = %2u,%s",tknampad,fmtname(len,nam),tk+nkwd,(tk & 7) == 7 ? "\n  " : " ");
-      if (tk == grp0tok) {
-        bpos += mysnprintf(buf,bpos,blen,"\n  T%*s = %2u,\n  ",tknampad,"99_grp0",tk+nkwd);
+
+      grp = 0;
+      while (grp <= tkhigrp && tkngrps[grp] != tk) grp++;
+
+      if (grp <= tkhigrp) {
+        mysnprintf(buf2,0,32,"%ugrp",grp);
+        bpos += mysnprintf(buf,bpos,blen,"\n  T%*s = %2u,\n  ",tknampad,buf2,tk+nkwd);
       }
       if (len == eoflen && memeq(nam,speceof,eoflen)) {
         bpos += mysnprintf(buf,bpos,blen,"T%*s = %2u, ",tknampad,"99_eof",tk+nkwd);
@@ -2908,7 +2941,7 @@ static int wrfile(void)
         set = setmaps[bit];
         nam = setnams + set * Snam;
         if (nam[2]) bpos += mysnprintf(buf,bpos,blen,"%u",set);
-        else { buf[bpos++] = nam[0] & 0xdf; buf[bpos++] = nam[1] & 0xdf; }
+        else { buf[bpos++] = upcase(nam[0]); buf[bpos++] = upcase(nam[1]); }
       }
     }
     myfprintf(&lhfp,"%s\n};\n#undef x\n",buf);
@@ -2998,8 +3031,9 @@ static int wrfile(void)
       ctl = cp[0];
       s = sp[0];
       switch(ctl) {
-      case Cc_a: ccnt++; break;
-      case Cc_z: ccnt++; break;
+      case Cc_a:
+      case Cc_z:
+      case Cc_r:
       case Cc_q: ccnt++; break;
       case Cc_c: ccnt++; if (tp0->nowhile == 0 && tp->st == st0 && len == 1 && tp->act >= nact && tp->codlen == 0) {
                            if (loopc1 == 0) loopc = s;
@@ -3202,6 +3236,7 @@ static int wrfile(void)
       case Cc_c: mysnprintf(ctuval,0,Ctulen,"c == %s",printcchr(s)); break;
       case Cc_a: mysnprintf(ctuval,0,Ctulen,"(c | 0x20) == '%s'",chprint(s)); break;
       case Cc_q: mysnprintf(ctuval,0,Ctulen,"c == Q"); break;
+      case Cc_r: mysnprintf(ctuval,0,Ctulen,"R%u == %u",(s >> 4),s & 0xf); break;
       case Cc_t: if (havetvar) mysnprintf(ctuval,0,Ctulen,"t == %s",snam);
                  else if (tcnt > 1) { mysnprintf(ctuval,0,Ctulen," (t = ctab[c]) == %s",snam); havetvar=1; }
                  else mysnprintf(ctuval,0,Ctulen,"ctab[c] == %s",snam);
@@ -3234,6 +3269,7 @@ static int wrfile(void)
         case Cc_c: mysnprintf(ctuval,0,Ctulen," %s == %s",nxt,printcchr(s)); break;
         case Cc_a: mysnprintf(ctuval,0,Ctulen,"(%s | 0x20) == '%s'",nxt,chprint(s)); break;
         case Cc_q: mysnprintf(ctuval,0,Ctulen," %s == Q",nxt); break;
+        case Cc_r: mysnprintf(ctuval,0,Ctulen,"R%u == %u",(s >> 4),s & 0xf); break;
         case Cc_t: mysnprintf(ctuval,0,Ctulen," ctab[%s] == %s",nxt,strupper(setnams + s * Snam)); break;
         case Cc_u: mysnprintf(ctuval,0,Ctulen," (utab[%s] & %s)",nxt,strupper(setnams + s * Snam)); break;
         case Cc_x: err(tp0,st0,"unexpected other at pos %u",i);
@@ -3414,29 +3450,22 @@ static int cmdline(int argc, char *argv[])
   enum Parsearg pa;
   bool havereg,endopt;
 
-  ub2 cmdlut[256];
-
   globs.msglvl = Info;
   globs.rununtil = 0xff;
-
-  if (argc > 3) prepopts(cmdopts,cmdlut,1);
-  else cmdlut[0] = 0;
 
   while (argc) { // options
     havereg = 0;
     endopt = 0;
-    pa = parseargs(argc,argv,cmdopts,&coval,cmdlut,1);
+    pa = parseargs(argc,argv,cmdopts,&coval,nil,1);
 
     switch (pa) {
     case Pa_nil:
-    case Pa_eof: endopt = 1; break;
-
-    case Pa_min2: endopt = 1; break;
+    case Pa_eof:
+    case Pa_min2:   endopt = 1; break;
 
     case Pa_min1:
     case Pa_plusmin:
-    case Pa_plus1: havereg = 1; break;
-
+    case Pa_plus1:
     case Pa_regarg: havereg = 1; break; // first non-option regular
 
     case Pa_notfound:
@@ -3464,9 +3493,9 @@ static int cmdline(int argc, char *argv[])
 
     op = coval.op;
     switch(op->opt) {
-    case Co_help: return 1;
+    case Co_help:    return 1;
     case Co_version: return 1;
-    case Co_license:return 1;
+    case Co_license: return 1;
 
     case Co_omit:  switch (coval.uval) {
                    case 0: omitcode = 1; break;

@@ -9,14 +9,14 @@
 #  the Free Software Foundation, either version 3 of the License, or
 #  (at your option) any later version.
 
-#  mpy is distributed in the hope that it will be useful,
+#  Morelia is distributed in the hope that it will be useful,
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 #  GNU General Public License for more details.
 
 #  You should have received a copy of the GNU Affero General Public License
 #  along with this program, typically in the file License.txt
-#  If not, see <http://www.gnu.org/licenses/>.
+#  If not, see http://www.gnu.org/licenses.
 
 version 0.1.0
 author joris
@@ -26,27 +26,35 @@ requires genlex 1.0
 eof while
 
 token
+# group 0 - storable terms
+  id
   nlit
   slit
-  id
-  co 1
-  cc 1
-  ro 1
-  rc 1
-#  so
-#  sc
-  qas 1
-#  aas
-#  das
-#  mulas
-  colon 1
-  sepa 1
-#  comma
-#  dot
-#  exp
+
+# group 1 - operators
   ast 1
   pm 1
   op 1
+
+# group 2 - scope in
+  co 2
+
+# group 3 - scope out
+  cc 3
+
+  ro 4
+  rc 4
+#  so
+#  sc
+  qas 4
+#  aas
+#  das
+#  mulas
+  colon 4
+  sepa 4
+#  comma
+#  dot
+#  exp
 
 set
   af _a-zA-Z
@@ -70,7 +78,16 @@ set
   pm +-
   st *
 #  eq =
-  op /%@<>&|^!
+#  op /%@<>&|^!
+  o1 /
+  o2 %
+  o3 @
+  o4 <
+  o5 >
+  o6 &
+  o7 |
+  o8 ^
+  o9 !
   EOF \00
  +an _a-zA-Z+nm
  +ee eE
@@ -146,9 +163,48 @@ doslit
 2 slitpool[slitx++] = c;
 
 # ----------------------
+# \xx in string literal
+# ----------------------
+`A doesc
+  c = sp[n];
+  x1 = esctab[c];
+  switch(x1) {
+  case Esc_nl: lntab[l] = n; nlcol=n; break;
+.
+  case Esc_o: x1=doesco(sp,n); slitpool[slitx++] = x1; n += 3; break;
+  case Esc_x: x1=doescx(sp,n); n += 2;
+              if (x1 < 0x80 || (slitctl & Slit_b) ) slitpool[slitx++] = x1;
+              else {
+                slitpool[slitx]   = 0xc0 | (x1 >> 6);
+                slitpool[slitx+1] = 0x80 | (x1 & 0x3f);
+                slitx += 2;
+              }
+              break;
+.
+  case Esc_u:
+  case Esc_U:
+  case Esc_N: if (slitctl & Slit_b) {
+                swarn(n,"unrecognised escape sequence '\\%s'",chprint(c));
+                slitpool[slitx] = '\\';
+                slitpool[slitx+1] = 'c';
+                n += 2; slitx += 2;
+              } else n=doescu(sp,n,slitpool,&slitx,x1);
+              break;
+.
+  case Esc_inv: swarn(n,"unrecognised escape sequence '\\%s'",chprint(c));
+                slitpool[slitx] = '\\';
+                slitpool[slitx+1] = 'c';
+                n += 2; slitx += 2;
+                break;
+.
+  default:    slitpool[slitx++] = x1; n++;
+  }
+
+# ----------------------
 # end of string literal
 # ----------------------
 slit
+  R0=0;
 2 len = slitx - slitpos;
 2 switch(len) {
 2 case 1:
@@ -349,9 +405,18 @@ root
 # operators
 #  ** . exp
 #  *= . mulas
-  * . ast
+  * . ast 2. tkbits[dn] = Lomul;
 
-  op oper . 2. tkbits[dn] = c;
+#  op oper . 2. tkbits[dn] = c;
+  / oper . 2. tkbits[dn] = Lodiv;
+  % .    . 2. tkbits[dn] = c;
+  @ .    . 2. tkbits[dn] = c;
+  < oper . 2. tkbits[dn] = Lolt;
+  > oper . 2. tkbits[dn] = Logt;
+  & oper . 2. tkbits[dn] = c;
+  | oper . 2. tkbits[dn] = Loor;
+  ^ .    . 2. tkbits[dn] = c;
+  ! .    . 2. tkbits[dn] = c;
 
 # pm= . aas.
 
@@ -365,11 +430,17 @@ root
   EOF EOF
 
 # ---------------------
-# operators
+# 2-3 char operators
 # ---------------------
 oper
 #  op= root aas 2. tkbits[dn] |= (c << 8);
-  op  root op  2. tkbits[dn] |= (c << 8);
+#  op  root op  2. tkbits[dn] |= (c << 8);
+
+  < root . 2. tkbits[dn] = Loshl;
+  > root . 2. tkbits[dn] = Loshr;
+  & root . 2. tkbits[dn] = Loand;
+  | root . 2. tkbits[dn] = Loor;
+
 #  = root aas
   ot -root op
 
@@ -494,41 +565,32 @@ id
   _
   ot -root 2.nlit ilit
 
+# todo merge adjacent strings
 # ---------------------
 # string literal start
 # ---------------------
 slit0
-  QQ sllit0 . 2.slitx=slitpos;
-  Q root 2.slit 1.slit0cnt++;
-1 \nl . . donl
-  nl Err-str-nl
+  QQ . . 2.slitx=slitpos;\
+           R0=1; # start of long slit
+
+  R00Q root 2.slit 1.slit0cnt++; # empty short slit ''
+
+1 \ . . donl
+`A2  \ . . 2doesc
+`a2  \ . . donl
+1 nl Err-str-nl
   ot slit . doslit0
 
 # ---------------------
 # string literal
 # ---------------------
 slit string literal
-  Q  root 2.slit slit
-1 \nl . . donl
-  nl Err-str-nl
-  EOF Err
-  ot . . 2doslit
+  R00Q   root 2.slit slit # end of short slit
+  R01QQQ root 2.slit slit # end of long slit
 
-# ---------------------
-# string literal long
-# ---------------------
-sllit0
-  QQQ root 2.slit 1.slit0cnt++;
-1 \nl sllit . donl
-  {{ sllit . 2doslit
-  nl sllit . donl
-  EOF Err
-  ot sllit . 2doslit
-
-sllit
-  QQQ root 2.slit slit
-1 \nl . . donl
-  {{ . . 2doslit
-  nl . . donl
+1 \ . . donl
+`A2  \ . . 2doesc
+`a2  \ . . donl
+1 nl Err-str-nl
   EOF Err
   ot . . 2doslit
