@@ -9,14 +9,14 @@
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
 
-   mpy is distributed in the hope that it will be useful,
+   Morelia is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU Affero General Public License
    along with this program, typically in the file License.txt
-   If not, see <http://www.gnu.org/licenses/>.
+   If not, see http://www.gnu.org/licenses.
  */
 
 /* This file contains messaging logic used for 4 purposes:
@@ -671,7 +671,7 @@ void showcntfln(ub4 fln,cchar *nam,ub4 cnt)
 
   if (cnt == 0 || nam == nil) return;
 
-  if (Ctab[(*nam)] == Cnum) n = (ub2)(*nam++ - '0');
+  if (Ctab[*nam] == Cnum) n = (ub2)(*nam++ - '0');
   if (*nam == '#') infofln(fln,"%*u` %s",n,cnt,nam+1);
   else infofln(fln,"%*u` %s%.*s",n,cnt,nam,cnt != 1,"s");
 }

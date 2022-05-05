@@ -9,14 +9,14 @@
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
 
-   mpy is distributed in the hope that it will be useful,
+   Morelia is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU Affero General Public License
    along with this program, typically in the file License.txt
-   If not, see <http://www.gnu.org/licenses/>.
+   If not, see http://www.gnu.org/licenses.
  */
 
 #ifndef __STDC__
@@ -66,9 +66,6 @@ typedef const char cchar;
 #ifndef nil
  #define nil (void*)0
 #endif
-
-// #define oclear(p) memset(&(p),0,sizeof(p))
-// #define aclear(p) memset((p),0,sizeof((p)))
 
 // c11 langage only
 #if __STDC_VERSION__ >= 201101L

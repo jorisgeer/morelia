@@ -9,14 +9,14 @@
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
 
-   mpy is distributed in the hope that it will be useful,
+   Morelia is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU Affero General Public License
    along with this program, typically in the file License.txt
-   If not, see <http://www.gnu.org/licenses/>.
+   If not, see http://www.gnu.org/licenses.
  */
 
 #include <string.h>
@@ -206,3 +206,4 @@ ub2 underline(char *buf,ub2 slen)
   return len;
 }
 
+char upcase(char c) { return c >= 'a' && c <= 'z' ? c & 0xdf : c; }
