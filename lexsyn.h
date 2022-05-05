@@ -9,14 +9,14 @@
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
 
-   mpy is distributed in the hope that it will be useful,
+   Morelia is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU Affero General Public License
    along with this program, typically in the file License.txt
-   If not, see <http://www.gnu.org/licenses/>.
+   If not, see http://www.gnu.org/licenses.
  */
 
 #define Tkgrps 16
@@ -35,16 +35,17 @@ struct lexsyn {
   ub4 srclen;
 
   const ub1 *slitpool;
-  ub4 slittop;
+  ub4 slitcnt,slittop;
 
   cchar *nlitpool;
-  ub4 nlittop;
+  ub4 nlitcnt,nlittop;
 
-  ub2 colvlhi;
+  ub2 hidepth;
   ub4 idcnt;
-  ub4 *colvlidhi;
 
   ub4 tkgrps[Tkgrps];
+
+  cchar *name;
 
   ub2 incdircnt;
   const ub1 **incdirs;
@@ -61,6 +62,8 @@ struct lexsyn {
 #define Litflt (1U << 31)
 #define Litasc (1U << 30)
 
+enum Packed8 Lop { Lolit,Lorelor,Loreland,Lone,Loeq,Loshl,Loshr,Lonot,Loxor,Loneg,Loor,Loand,Loumin,Loupls,Lomin,Lopls,Lomul,Lodiv,Lomod,Loas,Lolt,Logt,Lole,Loge,Loqst,Locol,Locom,Locnt };
+
 enum Inctype { Inone,Isys,Iuser };
 
 extern int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *lsp,ub8 T0);
@@ -69,8 +72,6 @@ extern ub2 id2nam(ub2 id);
 
 extern void inilex(void);
 extern cchar *lex_info(void);
-
-extern int syn(struct lexsyn *lsp);
 
 extern void addmod(const ub1 *nam,ub4 len,bool isfile);
 

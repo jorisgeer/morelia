@@ -9,14 +9,14 @@
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
 
-   mpy is distributed in the hope that it will be useful,
+   Morelia is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU Affero General Public License
    along with this program, typically in the file License.txt
-   If not, see <http://www.gnu.org/licenses/>.
+   If not, see http://www.gnu.org/licenses.
  */
 
 
@@ -59,8 +59,9 @@ static const char version[] = "0.1.0-alpha";
 
 static const char packed8[] = "Packed8 ";
 
-static const char *specname;
-static const char *stabname;
+static const char *specname; // arg 1
+static const char *stabname; // arg 2
+static const char *sdefname; // arg 3
 
 static bool allowunref = 0;
 
@@ -119,6 +120,8 @@ struct rule {
 
   ub1 altlens[Nalt];
   ub2 lnos[Nalt];
+
+  ub2 prdid[Nalt];
 
   ub1 ltis[Nalt];
   ub1 hisis[Nalt];
@@ -192,6 +195,8 @@ static ub8 laseconds[Lacnt * T99_count * Laset];
 static ub1 higrpdif;
 static ub4 higrpfln;
 
+static ub2 prdid_blk;
+
 static ub4 specdmin;
 static ub4 specdtim;
 
@@ -227,7 +232,7 @@ static cchar *tknam2(enum Token tk,bool hr)
   return buf;
 }
 
-static bool tkdefarg(enum Token t) { return (t > T99_kwd && t <= T99_grp0); }
+static bool tkdefarg(enum Token t) { return (t > T99_kwd && t <= T0grp); }
 
 static cchar *tknam(enum Token tk) { return  tknam2(tk,0); }
 
@@ -1350,18 +1355,18 @@ static int mktables(void)
 
   stablen = se;
   vtablen = ve;
-  showcnt("prod",stablen);
-  showcnt("vprod",vtablen);
-  showcnt("la",laseq);
-  showcnt("#dir entries",dircnt);
-  showcnt("#ve entries",vecnt);
+  showcnt("3prod",stablen);
+  showcnt("3vprod",vtablen);
+  showcnt("3la",laseq);
+  showcnt("3#dir entries",dircnt);
+  showcnt("3#ve entries",vecnt);
 
   if (higrpdif) sinfo(higrpfln,"longest opt group %u",higrpdif);
 
   lacnt = laseq;
 
   ndirprd = ndirprd1 + ndirprd2;
-  showcnt("dirprd",ndirprd);
+  showcnt("3dirprd",ndirprd);
 
   // patch tbl len now we know it
   for (r = 0; r < rulcnt; r++) {
@@ -1405,7 +1410,7 @@ static int mktables(void)
 enum Specstate { Sout,Scmt,Smcmt,
   Svarnam,Svarnam1,Svarval,
   Srule0,Srule1,Srule2,Srule3,
-  Spat0,Spat1,Spat2,Spat3,Spat4,Spat5,Scount
+  Spat0,Spat1,Spat2,Spat3,Spat4,Spat5,Spat6,Scount
 };
 
 #define Specvlen 32
@@ -1630,7 +1635,7 @@ static void addrules(cchar *src,ub2 n,ub2 ln)
   vrb("%u rules",rulcnt);
 }
 
-static int rdspec(cchar *fname,const ub1 *src)
+static int rdspec(cchar *fname,ub1 *src)
 {
   enum Specstate nxst = Sout,st = Sout;
   enum Ctype t,t2;
@@ -1663,9 +1668,11 @@ static int rdspec(cchar *fname,const ub1 *src)
   bool ucfirst=0;
   bool mapped=0;
   ub1  reptok=0;
-  bool isrep1n;
+  bool isrep0n,isrep1n;
   bool dorng=0;
   ub1  dola=0;
+
+  ub2 prdid=hi16;
 
   ub1 argn=0;
   enum Ctl argc,hiarg=0;
@@ -1847,6 +1854,7 @@ static int rdspec(cchar *fname,const ub1 *src)
     mapped = 0;
     reptok = 0;
     dola=0;
+    prdid = hi16;
 
     switch (t) {
     case Cws:  break;
@@ -1959,11 +1967,11 @@ static int rdspec(cchar *fname,const ub1 *src)
       c2 = src[symnam0+symlen-1];
     }
 
-    crep = ' ';
+    crep = ' '; isrep0n = isrep1n = 0;
     if (symlen > 1) { // annotations for optional and repetition
       crep = c2;
       switch (c2) {
-      case '*': repc = Crep0n; sinc = 0; symlen--; break;
+      case '*': repc = Crep0n; sinc = 0; symlen--; isrep0n = 1; break;
       case '?': repc = Crep01; sinc = 0; symlen--; break;
       case '+': repc = Crep11; isrep1n = 1; symlen--; break;
       case ')': crep = ' '; break;
@@ -1991,6 +1999,7 @@ static int rdspec(cchar *fname,const ub1 *src)
         if (mp == mp0) serror(n,"unrecognised merged token '%.*s'",symlen,src+symnam0);
         tk = gettoken(src+mp0,mp-mp0);
         if (tk == T99_count) serror(n,"unknown merged token '%.*s'",mp-mp0,src+mp0);
+        if (isrep0n && tk < T0grp) serror2(n,nt0,tk,"repetition '%c' on group 0 token",c2);
         tkrefs[tk] = lno;
 
         if (tmpbits[tk]) serror(n,"duplicate token %s",tknam(tk));
@@ -1998,7 +2007,7 @@ static int rdspec(cchar *fname,const ub1 *src)
         if (tkdefarg(tk) && argc == 0) argc = ++argn;
         if (pos < 8) {
           nam = tknam(tk);
-          buf[pos++] = *nam & 0xdf; buf[pos++] = nam[1];
+          buf[pos++] = upcase(*nam); buf[pos++] = nam[1];
         }
         if (src[mp] == '=') { // alias
           mp++;
@@ -2028,6 +2037,7 @@ static int rdspec(cchar *fname,const ub1 *src)
     } else if (ucfirst || mapped) { // plain term
       tk = gettoken(src+symnam0,symlen);
       if (tk == T99_count) serror2(n,nt0,0xff,"unknown token '%.*s'",symlen,src+symnam0);
+      if (isrep0n && tk < T0grp) serror2(n,nt0,tk,"repetition '%c' on group 0 token",c2);
 
       if (tkdefarg(tk) && argc == 0) argc = ++argn;
       s = tk;
@@ -2058,6 +2068,7 @@ static int rdspec(cchar *fname,const ub1 *src)
         s = nt + T99_count;
       }
       if (nt < rulcnt) {
+        if (repc == Crep0n) serror2(n,nt0,0xff,"repeating nonterm %.*s",symlen,src+symnam0);
         rp2 = rules + nt;
         if (rp2->rulrep && (repc != Crep11 || isrep1n) ) serror2(n,nt0,0xff,"repeat code %c on repeat rule %.*s",crep,symlen,src+symnam0);
         ntrefs[nt] = lno;
@@ -2100,6 +2111,7 @@ static int rdspec(cchar *fname,const ub1 *src)
       if (optlvl) serror(n,"unbalanced group at pos %u",optpos[optlvl-1]);
       rp->dsclen[acur] = dscpos;
       rp->altlens[acur] = scur;
+      rp->prdid[acur] = prdid;
       rp->altcnt = ++acur;
     }
 
@@ -2118,6 +2130,7 @@ static int rdspec(cchar *fname,const ub1 *src)
     if (t == Chsh || t == Cnl || t == Cbtk) { // end of alt
 
       rp->dsclen[acur] = dscpos;
+      rp->prdid[acur] = prdid;
 
       if (scur == 0) serror(n,"rule %s empty alt %u",ntnam(nt0),acur);
 
@@ -2190,8 +2203,7 @@ static int rdspec(cchar *fname,const ub1 *src)
 
   case Spat4: // prod name
     switch (t) {
-    case Calpha:
-    case Cnum:   idnam0 = n; idnam1 = 0; st = Spat5; break;
+    case Calpha: idnam0 = n; idnam1 = 0; st = Spat5; break;
     case Chsh:   st = Scmt; nxst = Spat0; break;
     default:     serror2(n,nt0,0xff,"unexpected char '%s' in pattern",chprint(c));
     }
@@ -2200,16 +2212,34 @@ static int rdspec(cchar *fname,const ub1 *src)
   case Spat5:
     switch (t) {
     case Calpha:
-    case Cnum: break;
+    case Cnum:   break;
+    case Cmin:   src[n] = '_'; break;
+    case Ceq:    prdid = 0; Fallthrough
     case Cws:
     case Chsh:
-    case Cnl:  idnam1 = n; break;
-    default:   serror2(n,nt0,0xff,"unexpected char '%s' in pattern",chprint(c));
+    case Cnl:    idnam1 = n; break;
+    default:     serror2(n,nt0,0xff,"unexpected char '%s' in pattern",chprint(c));
     }
     if (idnam1 == 0) break;
-    rp->prdnam[acur-1] = src + idnam0; rp->prdnlen[acur-1] = idnam1 - idnam0;
+    idnlen = idnam1 - idnam0;
+    rp->prdnam[acur-1] = src + idnam0; rp->prdnlen[acur-1] = idnlen;
     if (t == Cnl) st = Spat0;
+    else if (t == Ceq) st = Spat6;
     else { st = Scmt; nxst = Spat0; }
+  break;
+
+  case Spat6:
+    switch (t) {
+      case Cnum: prdid = prdid * 10 + c - '0'; break;
+      case Chsh:
+      case Cws: st = Scmt; nxst = Spat0; break;
+      case Cnl: st = Spat0; break;
+      default:  serror2(n,nt0,0xff,"unexpected char '%s' in pattern",chprint(c));
+    }
+    if (t != Cnum) {
+      rp->prdid[acur-1] = prdid;
+      if (idnlen == 5 && memcmp(src + idnam0,"block",idnlen) == 0) prdid_blk = prdid;
+    }
   break;
 
   } // switch
@@ -2448,12 +2478,12 @@ static ub4 enumln(char *buf,ub4 pos,ub4 len,sb4 wid,cchar *nam,ub2 n,bool last)
   return p1;
 }
 
-static void wrprd(struct bufile *fp)
+static void wrprd(struct bufile *fp,struct bufile *dfp)
 {
   cchar *comma;
   char *pnam;
   ub1 atr,a,si;
-  ub2 ve,se,r,i,r8;
+  ub2 ve,se,r,i,r8,pid,ve_blk = hi16;
   struct rule *rp;
   struct sentry *ep;
   ub2 n,pos1=0,pos2=0,pos3=0,pos4=0;
@@ -2477,6 +2507,9 @@ static void wrprd(struct bufile *fp)
     rp = rules + r;
     a = ep->alt;
     r8 = r << 8;
+    pid = rp->prdid[a];
+
+    if (pid == prdid_blk) ve_blk = ve;
 
     // prod name
     pnam = prdnams + ve * Prdnam;
@@ -2503,8 +2536,8 @@ static void wrprd(struct bufile *fp)
     pos1 += len;
   }
 
-  myfprintf(fp,"static const char prodnampool[%u] = \n  \"%s\";\n\n",pos1,buf1);
-  myfprintf(fp,"static const ub2 prodnampos[%u] = { %s };\n\n",vtablen,buf2);
+  myfprintf(dfp,"static const char prodnampool[%u] = \n  \"%s\";\n\n",pos1,buf1);
+  myfprintf(dfp,"static const ub2 prodnampos[%u] = { %s };\n\n",vtablen,buf2);
 
   myfprintf(fp,"static const ub2 vprdmap[%u] = { %s };\n\n",vtablen,buf4);
 
@@ -2518,6 +2551,7 @@ static void wrprd(struct bufile *fp)
   for (ve = 0; ve < vtablen; ve++) {
     pnam = prdnams + ve * Prdnam;
     pos1 += enumln(buf1,pos1,len1,pad,pnam,ve,0);
+    if (ve == ve_blk) pos1 += enumln(buf1,pos1,len1,pad,"0block",ve,0);
   }
   pos1 += enumln(buf1,pos1,len1,pad,"tablen",vtablen,0);
 
@@ -2542,16 +2576,18 @@ static void wrprd(struct bufile *fp)
   pos1 += enumln(buf1,pos1,len1,pad,"endrep",vtablen + ndirprd + lacnt,0);
   pos1 += enumln(buf1,pos1,len1,pad,"count",vtablen + ndirprd + lacnt + 1,1);
 
-  myfprintf(fp,"enum %sProduction {%.*s\n};\n\n",packed8,pos1,buf1);
+  myfprintf(dfp,"enum %sProduction {%.*s\n};\n\n",packed8,pos1,buf1);
 }
 
-static void wrfhdr(struct bufile *fp)
+static void wrfhdr(struct bufile *fp,bool addinfo)
 {
   myfprintf(fp,"/* generated by gensyn %s %s\n\n",version,fmtdate(globs.prgdtim,globs.prgdmin));
   myfprintf(fp,"   from grammar %s version %s  %s lang %s\n */\n\n",specname,specversion,specxdate,speclang);
 
-  myfprintf(fp,"static const char synfname[] = \"%s\";\n",specname);
-  myfprintf(fp,"static const char syninfo[] = \"%s %s  %s %s\";\n\n",specname,specversion,specxdate,speclang);
+  if (addinfo) {
+    myfprintf(fp,"static const char synfname[] = \"%s\";\n",specname);
+    myfprintf(fp,"static const char syninfo[] = \"%s %s  %s %s\";\n\n",specname,specversion,specxdate,speclang);
+  }
 }
 
 static int wrfile(void)
@@ -2605,6 +2641,7 @@ static int wrfile(void)
   sb2 namwid = -hinamlen;
 
   static struct bufile sfp;
+  static struct bufile dfp;
   ub4 bulen = rulcnt * T99_count * 32 + stablen * Slen * 32 + 0x4000;
 
   sfp.nam = stabname;
@@ -2614,7 +2651,16 @@ static int wrfile(void)
 
   myfprintf(&sfp,"// %s - LL(1-2) parser tables\n\n",stabname);
 
-  wrfhdr(&sfp);
+  wrfhdr(&sfp,1);
+
+  dfp.nam = sdefname;
+  dfp.dobck = 2;
+
+  myfopen(&dfp,32 * vtablen + 4096,1);
+
+  myfprintf(&dfp,"// %s - parser defines\n\n",sdefname);
+
+  wrfhdr(&dfp,0);
 
   memset(sposs,0,sizeof(sposs));
   if (nrulcnt > rulcnt) ice(0,hi32,"nrulcnt %u > %u",nrulcnt,rulcnt);
@@ -2676,7 +2722,8 @@ static int wrfile(void)
   }
   myfprintf(&sfp," };\n\n");
 
-  wrprd(&sfp),
+  wrprd(&sfp,&dfp),
+  myfclose(&dfp);
 
   prdnamwid = maxprdnam + 2;
 
@@ -3028,7 +3075,7 @@ static struct cmdopt cmdopts[] = {
 //  { "Winfo",' ',Co_Winfo,"list","comma-separated list of diags to report as info" },
   { "",'u',      Co_uncond, "",         "unconditional write" },
   { "until", ' ',Co_until, "%espec,gen,out", "process until <pass>" },
-  { nil,0,0,"<spec> <syntab> <syndef>","gensyn"}
+  { nil,3,0,"<spec> <syntab> <syndef>","gensyn"}
 };
 
 static int cmdline(int argc, char *argv[])
@@ -3039,8 +3086,6 @@ static int cmdline(int argc, char *argv[])
   enum Parsearg pa;
   cchar *prgnam;
   bool havereg,endopt;
-
-  ub2 cmdlut[256];
 
   if (argc > 0) {
     prgnam = strrchr(argv[0],'/');
@@ -3055,13 +3100,10 @@ static int cmdline(int argc, char *argv[])
   iniutil();
   iniprgtim();
 
-  if (argc > 3) prepopts(cmdopts,cmdlut,1);
-  else cmdlut[0] = 0;
-
   while (argc) { // options
     havereg = 0;
     endopt = 0;
-    pa = parseargs((ub4)argc,argv,cmdopts,&coval,cmdlut,1);
+    pa = parseargs((ub4)argc,argv,cmdopts,&coval,nil,1);
 
     switch (pa) {
     case Pa_nil:
@@ -3114,6 +3156,7 @@ static int cmdline(int argc, char *argv[])
   while (argc) { // regular args
     if (!specname) specname = (cchar *)*argv;
     else if (!stabname) stabname = (cchar *)*argv;
+    else if (!sdefname) sdefname = (cchar *)*argv;
     else warning("ignoring extra arg '%s'",*argv);
     argc--; argv++;
   }
@@ -3138,7 +3181,7 @@ static int do_main(int argc, char *argv[])
   struct myfile specfile;
   struct fnaminf *fb;
 
-  const ub1 *spec;
+  ub1 *spec;
   ub4 len,lncnt;
   ub4 *lntab;
 
@@ -3151,6 +3194,7 @@ static int do_main(int argc, char *argv[])
   if (rv) return 1;
   else if (!specname) { errorfln(FLN,0,"missing spec file"); return 1; }
   else if (!stabname) { errorfln(FLN,0,"missing syn tab file"); return 1; }
+  else if (!sdefname) { errorfln(FLN,0,"missing syn def file"); return 1; }
 
   sassert(sizeof(enum Token) == 1,"short enums required");
   sassert(sizeof(ub8) == 8,"expect long long to be 8 bytes");

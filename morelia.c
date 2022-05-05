@@ -9,14 +9,14 @@
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
 
-   mpy is distributed in the hope that it will be useful,
+   Morelia is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
    GNU General Public License for more details.
 
    You should have received a copy of the GNU Affero General Public License
    along with this program, typically in the file License.txt
-   If not, see <http://www.gnu.org/licenses/>.
+   If not, see http://www.gnu.org/licenses.
  */
 
 #include <stddef.h>
@@ -35,6 +35,9 @@ static ub4 msgfile = Shsrc_main;
 
 #include "lexsyn.h"
 
+#include "syndef.h"
+#include "synast.h"
+
 #include "util.h"
 
 struct globs globs;
@@ -48,6 +51,7 @@ static const ub1 *incdirs[Incdirs];
 static ub4 incdircnt;
 
 static struct lexsyn ls;
+static struct synast sa;
 
 #define Incstk 64
 
@@ -64,6 +68,7 @@ static int docc(const ub1 *src,ub4 slen,bool isfile)
 {
   int rv;
   ub8 T0 = 0,T1 = 0;
+  struct ast *ap;
 
   ls.incdircnt = incdircnt;
   ls.incdirs = incdirs;
@@ -72,14 +77,16 @@ static int docc(const ub1 *src,ub4 slen,bool isfile)
 
   if (isfile) {
     vrb("compile from file %.32s",src);
+    ls.name = (cchar *)src;
     rv = lexfile(FLN,(cchar *)src,"",Inone,&ls,T0);
   } else {
+    ls.name = "cmdline";
     vrb("compile from cmdline len %u '%.16s%s'",slen,src,slen > 16 ? "..." : "");
     rv = lexstr(src,slen,&ls,T0);
   }
   if (rv) return rv;
 
-  if (globs.rununtil < 3) { info("until lex %u",globs.rununtil); return 0; }
+  if (globs.rununtil == 3) { info("until lex %u",globs.rununtil); return 0; }
 
   if (ls.tkcnt == 0) {
     if (isfile) info("%s is empty",src);
@@ -90,17 +97,27 @@ static int docc(const ub1 *src,ub4 slen,bool isfile)
 
   timeit(&T1,nil);
 
-  rv = syn(&ls);
+  rv = syn(&ls,&sa);
 
   timeit2(&T1,ls.srclen,"parse took ");
 
-  timeit2(&T0,ls.srclen,"lex + parse took ");
+  timeit2(&T0,ls.srclen,"lex + parse- took ");
 
   if (rv) return rv;
 
-  afree(ls.tkbas,"lex tokens",nextcnt);
+  if (sa.ndcnt == 0) {
+    info("%s is empty",ls.name);
+  }
 
-//  rv = ast();
+  if (globs.rununtil == 4) { info("until syn %u",globs.rununtil); return 0; }
+
+  ap = mkast(&sa,&ls);
+
+  timeit2(&T0,ls.srclen,"lex + parse+ took ");
+
+  if (rv) return 1;
+
+//  afree(ls.tkbas,"lex tokens",nextcnt);
 
   return 0;
 }
@@ -134,7 +151,7 @@ static int domod(void)
 static struct cmdopt cmdopts[] = {
   { "",        'c', Co_prog,    "prog", "program to run as string" },
   { "emit",    ' ', Co_emit,    "%elex,syn,ast,sem","intermediate pass output to emit" },
-  { "until",   ' ', Co_until,   "%elex1,lex2,lex3,syn1,syn2", "process until <pass>" },
+  { "until",   ' ', Co_until,   "%einit,file,lex1,lex,syn,ast", "process until <pass>" },
 
   { "include", 'I', Co_include, "dir",  "add directory to include search path" },
 
@@ -144,7 +161,7 @@ static struct cmdopt cmdopts[] = {
 
   { "Wtrace",  ' ', Co_Wtrace,  "list", "comma-separated list of diags to report as trace" },
 
-  { nil,0,0,"<srcfile>","mpy"}
+  { nil,0,0,"<srcfile>","Morelia"}
 };
 
 static void modinfo(void)
@@ -302,6 +319,9 @@ int main(int argc, char *argv[])
   }
 
   inilex();
+
+  if (globs.rununtil == 0) { infofln(FLN,"until lex"); return 0; }
+
   rv = domod();
 
   myexit();

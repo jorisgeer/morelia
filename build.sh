@@ -6,8 +6,6 @@ set -f
 set -eu
 # set -x
 
-lang=minipython
-
 compiler=gcc
 analyzer=clang
 
@@ -20,7 +18,7 @@ cdiag='-Wall -Wextra -Wshadow -Wundef -Wno-unused -Wno-padded -Wno-char-subscrip
 cfmt='-fmax-errors=20 -fno-diagnostics-show-caret -fno-diagnostics-color'
 
 #cdbg='-g1 -fsanitize=undefined,signed-integer-overflow,bounds -fno-sanitize-recover=all -ftrapv -fstack-protector'
-cdbg='-g1 -fno-stack-protector -fcf-protection=none -fno-stack-clash-protection -fno-asynchronous-unwind-tables'
+cdbg='-g1 -fno-stack-protector -fno-wrapv -fcf-protection=none -fno-stack-clash-protection -fno-asynchronous-unwind-tables'
 # UBSAN_OPTIONS=print_stacktrace=1
 
 #cxtra='-std=c11 -funsigned-char -static -specs /home/oem/lib/musl-gcc.specs'
@@ -38,6 +36,8 @@ anacfmt='-fno-caret-diagnostics -fno-color-diagnostics -fno-diagnostics-show-opt
 anacflags="$anacdia $anacfmt"
 
 asmcflags='-fverbose-asm -frandon-seed=0'
+
+lang=minipython
 
 dryrun=0
 always=0
@@ -268,7 +268,6 @@ while [ $# -ge 1 ]; do
   shift
 done
 
-# cc ast.o  ast.c base.h dia.h
 cc base.o base.c base.h
 cc os.o   os.c base.h mem.h msg.h fmt.h os.h
 cc mem.o  mem.c base.h os.h mem.h msg.h
@@ -293,15 +292,16 @@ if [ $dogen -eq 1 ]; then
   tc Gensyn gensyn.o gensyn.c base.h chr.h os.h fmt.h msg.h mem.h util.h tim.h syn.h tok.h
   ld        gensyn   gensyn.o base.o chr.o os.o fmt.o msg.o mem.o util.o tim.o
 
-  run syntab.i $lang.syn $always gensyn "$lang.syn syntab.i"
+  run syntab.i $lang.syn $always gensyn "$lang.syn syntab.i syndef.h"
+  run syndef.h $lang.syn $always gensyn "$lang.syn syntab.i syndef.h"
 fi
 
 if [ $ana -eq 0 ]; then
   cc lex.o lex.c lextb1.i lextb2.i tok.h lexdef.h base.h chr.h dia.h mem.h msg.h fmt.h os.h lexsyn.h hash.h
 fi
 
-cc syn.o syn.c base.h chr.h mem.h msg.h fmt.h syn.h lexsyn.h syntab.i tok.h
+cc syn.o syn.c base.h chr.h mem.h msg.h fmt.h syn.h lexsyn.h syndef.h syntab.i synast.h exp.h tok.h
+cc ast.o ast.c base.h chr.h mem.h msg.h fmt.h lexsyn.h synast.h syndef.h ast.h exp.h tok.h
+cc morelia.o morelia.c base.h dia.h mem.h os.h msg.h lexsyn.h syndef.h synast.h util.h
 
-cc morelia.o morelia.c base.h dia.h mem.h os.h msg.h lexsyn.h util.h
-
-ld morelia morelia.o base.o chr.o dia.o fmt.o lex.o mem.o msg.o os.o syn.o util.o tim.o
+ld morelia morelia.o base.o chr.o dia.o fmt.o lex.o math.o mem.o msg.o os.o syn.o ast.o util.o tim.o
