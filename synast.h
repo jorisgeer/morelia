@@ -19,16 +19,29 @@
    If not, see http://www.gnu.org/licenses.
  */
 
-enum Astyp { Aid,Ailit,Ailits,Aflit,Aslit,Atoken,Aop,Apexp,Auexp,Abexp,Aiter,Arep,Arexp,Aargs,Astmts,Acount };
+enum Astyp { Aid,Ailit,Aflit,Aslit,Ailits,
+  Aop,
+  Apexp,Auexp,Abexp,Aaexp,
+  Aasgnst,
+  Awhile,
+  Afndef,
+  Ablk,
+  Aparam,
+  Arexp,Aprmlst,Astmts,Acount };
+
+#define Aval Aslit
+#define Aleaf Ailits
+#define Arep Arexp
+#define Aback 0x20
 
 // #define Repcnt 0x8000
 #define Explen 1024
 
-#define Atybit 27
-#define Atymsk 0x7ffffff
+#define Atybit 26
+#define Atymsk 0x3ffffff
 
-#define Aopbit 23
-#define Aopmsk 0xf
+#define Aopbit 21
+#define Aopmsk 0x1f
 
 #define Acntlim (1U << Aopbit)
 
@@ -38,9 +51,15 @@ enum Astyp { Aid,Ailit,Ailits,Aflit,Aslit,Atoken,Aop,Apexp,Auexp,Abexp,Aiter,Are
 struct synast {
   struct rnode *nodes;
   ub4 *args;
+  ub8 *vals;
+  ub4 idcnt,uidcnt;
   ub4 ndcnt,argcnt;
+  ub4 nscid;
+  ub2 hiblklvl;
   ub4 ndcnts[Ptablen];
 };
+
+#define Nodarg 4
 
 struct rnode {
   enum Production ve;
@@ -50,7 +69,7 @@ struct rnode {
   ub2 amask;
 
   ub4 ni;
-  ub4 ai;  // argndx
+//  ub4 ai;  // argndx
   ub4 sib; // sibling for rep
 };
 

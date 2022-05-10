@@ -22,6 +22,11 @@
 #include <string.h>
 
 #include "base.h"
+
+#ifdef __clang__
+ #pragma clang diagnostic warning "-Wduplicate-enum"
+#endif
+
 #include "mem.h"
 
 #include "chr.h"
@@ -43,7 +48,6 @@ static ub4 msgfile = Shsrc_ast;
 #include "exp.h"
 
 // int cexp   , ?: || && ^ | & != == < > << >> b+ b- * / % ~ ! u+ u- ( ) 0
-//            a b  c  d  e e f g  g  h h i  i  j  j  k k k l l l  l  l l l
 //            0 1  2  3  4   5 6     7   8     9     10    11
 
 static ub1 oprecs[Ocnt] = {
@@ -68,7 +72,7 @@ static ub2 precexp(struct ast *ap,ub4 *vdst,ub4 *odst,ub4 *src,ub2 n)
   struct uexp *ue,*ueps = ap->uexps;
   struct pexp *pe,*peps = ap->pexps;
 
-  *stk = 0;
+  *stk = 0xff; stk[1] = 0;
 
   for (i = 0; i < n-1; i++) {
     e = src[i];
@@ -113,7 +117,33 @@ cchar *atynam(enum Astyp t)
   return p;
 }
 
-void emitast(struct ast *ap)
+static inline ub2 findvar(ub8 *scids,ub4 nscid,ub4 *scs,ub2 lvl,ub4 id)
+{
+  ub4 n,o;
+  ub4 sc;
+  ub8 b;
+
+  do {
+    sc = scs[lvl];
+    n = sc >> 6;
+    b = 1UL << (sc & 0x3f);
+    o = id * nscid + n;
+    if (scids[o] & b) return lvl;
+    else if (lvl == 0) return hi16;
+    lvl--;
+  } while (1);
+}
+
+static inline void addvar(ub8 *scids,ub4 nscid,ub4 sc,ub2 lvl,ub4 id)
+{
+  ub4 n = sc >> 6;
+  ub8 b = 1UL << (sc & 0x3f);
+  ub4 o = id * nscid + n;
+
+  scids[o] |= b;
+}
+
+static void process(struct ast *ap)
 {
   ub4 q[Depth];
   ub4 qi=0;
@@ -121,22 +151,61 @@ void emitast(struct ast *ap)
   struct stmtlst *stmts;
 
   struct stmtlst *stmtlp,*stmtls = ap->stmtls;
+
   struct id *idp,*ids = ap->ids;
   struct ilit *ilitp,*ilits = ap->ilits;
+
   struct uexp *uexpp,*uexps = ap->uexps;
+  struct bexp *bexpp,*bexps = ap->bexps;
+  struct aexp *aexpp,*aexps = ap->aexps;
+
   struct rexp *rexpp,*rexps = ap->rexps;
 
-  ub4 n,ni,nnd=0,ndcnt = ap->len;
+  struct blk *blkp,*blks = ap->blks;
+
+  struct asgnst *asgnstp,*asgnsts = ap->asgnsts;
+
+  struct fndef *fndefp,*fndefs = ap->fndefs;
+  struct param *prmp,*prms = ap->prms;
+
+  ub4 nid = ap->nid;
+
+  ub4 uidcnt = ap->uidcnt;
+
+  ub8 *scids = ap->scids;
+  ub2 *scidns = ap->scidns;
+  ub4 nscid = ap->nscid;
+
+  const ub4 *idfpos = ap->idfpos;
+
+  ub4 n,ni,ni2,nidef,blkni,tgt,ret,prmlst,nnd=0,ndcnt = ap->len;
+  ub4 nn;
   ub4 lpos,lcnt,pos=0;
+  ub4 scid;
+  ub4 ofs;
+  ub4 id;
+  ub2 lvl=0,vl;
   ub4 *rep,*repool = ap->repool;
   enum Astyp t;
   ub2 cnt=0,r;
+  ub1 lhs = 0;
+
+  ub1 blkbit = ap->blkbit;
+  ub4 lvlen = (1U << blkbit) * uidcnt;
+  ub4 *lvlvars = alloc(lvlen,ub4,Mo_nofill,"ast lvlvars",nextcnt);
+
+  ub2 cursc = 0;
+  ub4 scs[Depth];
 
   q[qi++] = ap->root;
 
+  scs[0] = 0; // globals
+
+  ub1 pass = 0;
+
   while (qi && nnd < ndcnt) {
 
-    n = q[qi--];
+    nn = q[--qi];
 
 // -----
     next:
@@ -144,42 +213,150 @@ void emitast(struct ast *ap)
 
     nnd++;
 
-    t = n >> Atybit;
-    ni = n & Atymsk;
+    t = nn >> Atybit;
+    ni = nn & Atymsk;
 
-    switch(t) {
+    switch((ub1)t) {
 
     // lists
     case Astmts:
       stmtlp = stmtls + ni;
       cnt = stmtlp->cnt;
       pos = stmtlp->pos;
-      break;
+    break;
 
     case Arexp:
       rexpp = rexps + ni;
       cnt = rexpp->cnt;
       pos = rexpp->pos;
-      break;
+    break;
 
     // leaves
     case Aid:
       idp = ids + ni;
-      info("id %u",idp->id);
-      goto next;
+      idp->lvl = lvl;
+      id = idp->id;
+      vl = findvar(scids,nscid,scs,lvl,id);
+      if (vl == hi16) {
+        if (lhs) {
+          lhs = 0;
+          scid = scs[lvl];
+          info("new var at lvl %u scid %u",lvl,scid);
+          idp->def = ni;
+          addvar(scids,nscid,scid,lvl,id);
+          ofs = scidns[scid];
+          idp->ofs = ofs;
+          scidns[scid] = ofs + 1;
+          lvlvars[(id << blkbit) + lvl] = ni;
+        } else serror(idfpos[ni],"unknown var %u at lvl %u scid %u",id,lvl,cursc);
+      } else {
+        scid = scs[vl];
+        idp->scid = scid;
+        nidef = lvlvars[(id << blkbit) + vl];
+        info("found at lvl %u scid %u def %u",vl,scid,nidef);
+        idp->def = nidef;
+      }
+    break;
 
     case Ailit:
       ilitp = ilits + ni;
       info("ilit %u",ilitp->val);
-      goto next;
+    break;
 
-    // nodes
+    // block
+    case Ablk:
+      q[qi++] = nn | Aback; // set return
+      scs[++lvl] = ++cursc;
+      blkp = blks + ni;
+      n = blkp->s;
+      info("blk %u",n);
+    goto next;
+
+    // statements
+    case Aasgnst: // a[i] = 3
+      asgnstp = asgnsts + ni;
+      tgt = asgnstp->tgt;
+      q[qi++] = tgt;
+      q[qi++] = nn | Aback;
+      n = asgnstp->r;
+      info("astmt tgt %u r %ulvl %u",tgt,n,lvl);
+    goto next;
+
+    case Afndef:
+      fndefp = fndefs + ni;
+      blkni = fndefp->blk;
+      prmlst = fndefp->plst;
+      idp = ids + fndefp->id * Atymsk;
+      id = idp->id;
+      ret = fndefp->ret;
+      fndefp->scid0 = cursc;
+      q[qi++] = nn | Aback;
+      if (prmlst != hi32) q[qi++] = prmlst;
+      n = blkni;
+    goto next;
+
+    // expressions
     case Auexp:
       uexpp = uexps + ni;
       n = uexpp->e;
       info("uexp %u %u",n,uexpp->op);
-      goto next;
+    goto next;
+
     case Apexp: break; // replaced to Abexp
+
+    case Abexp:
+      bexpp = bexps + ni;
+      q[qi++] = bexpp->r;
+      n = bexpp->l;
+      info("bexp %u %u",n,bexpp->op);
+    goto next;
+
+    case Aaexp: // a := b
+      aexpp = aexps + ni;
+      q[qi++] = aexpp->e;
+      n = aexpp->id;
+      ni2 = n & Atymsk;
+
+      idp = ids + ni2;
+      id = idp->id;
+
+      vl = findvar(scids,nscid,scs,lvl,id);
+
+      idp->lvl = lvl;
+      idp->rol = Lhs;
+      if (vl == hi16) { // new def
+        scid = scs[lvl];
+        info("new var at lvl %u scid %u",lvl,scid);
+        idp->def = ni2;
+        addvar(scids,nscid,scid,lvl,id);
+        ofs = scidns[scid];
+        idp->ofs = ofs;
+        scidns[scid] = ofs + 1;
+        lvlvars[(id << blkbit) + lvl] = ni2;
+      } else {
+        scid = scs[vl];
+        info("found at lvl %u scid %u",vl,scid);
+        nidef = lvlvars[(id << blkbit) + vl];
+        info("found at lvl %u scid %u def %u",vl,scid,nidef);
+        idp->def = nidef;
+      }
+      info("aexp id %u lvl %u",id,lvl);
+      idp->scid = scid;
+
+    goto next;
+
+    case Ablk | Aback:
+      if (lvl) lvl--;
+    break;
+
+    case (enum Astyp)(Aasgnst | Aback):
+      lhs = 1;
+    break;
+
+    case (enum Astyp)(Afndef | Aback):
+      fndefp = fndefs + ni;
+      fndefp->scid1 = cursc;
+    break;
 
     default: break;
     }
@@ -189,6 +366,25 @@ void emitast(struct ast *ap)
         memcpy(q+qi,repool + pos,cnt * 4);
         qi += cnt;
       }
+    } else {
+
+    }
+  }
+
+  ub4 *varsctab;
+  ub4 *varscs = alloc(nscid,ub4,Mo_nofill,"ast vars",nextcnt);
+  ub4 varsclen;
+
+  if (pass == 0) {
+    ofs = 0;
+    for (scid = 0; scid < nscid; scid++) { varscs[scid] = ofs; ofs += scidns[scid]; }
+    varsclen = ofs;
+    varsctab = alloc(varsclen,ub4,Mo_nofill,"ast varsctab",nextcnt);
+    for (ni = 0; ni < nid; ni++) {
+      idp = ids + ni;
+      scid = idp->scid;
+      ofs = varscs[scid] + idp->ofs;
+      varsctab[ofs] = ni;
     }
   }
 }
@@ -199,55 +395,151 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
   struct rnode *rp,*rpp = sa->nodes;
   ub4 *args = sa->args;
+  ub8 val,*vals = sa->vals;
+  ub4 vi=0;
   ub4 nvar,nuex,nbex;
   ub4 repos=0;
-  ub4 ri,a,a0,ni,ni0,i,ii,i0,ai;
-  ub4 ti=0,fpos,fpos_ilit=0;
+  ub4 ri,a=0,a0,ni,ni0,i,ii,i0,ai;
+  ub4 fpos,fpos_ilit=0;
   ub2 dfp;
   ub4 bits=0;
-  const ub4 *tkbits = lsp->tkbits;
-  const ub4 *tkfpos = lsp->tkpos;
-  ub2 am;
+  const ub8 *tkbits = lsp->bits;
+  ub2 am,ac,ainc,la;
   enum Astyp t,t0;
   enum Production ve;
   enum Op op;
   ub2 cnt,len;
 
+  sassert(Acount <= Atymsk,"atypes");
+  sassert(Ocnt <= Aopmsk,"opbits");
+
+  ub4 uidcnt = sa->uidcnt;
+  ub4 idcnt = sa->idcnt;
+
   ub4 *ndcnts = sa->ndcnts;
 
-  ub4 nstmtlst = ndcnts[Astmts];
+  ub4 nid = ndcnts[Aid];
+
+  if (nid != idcnt) ice(0,0,"idcnt %u vs %u,",idcnt,nid);
+
   ub4 nilit = ndcnts[Ailit];
 
+  ub4 nuexp = ndcnts[Auexp];
+  ub4 nbexp = ndcnts[Abexp];
+  ub4 npexp = ndcnts[Apexp];
+  ub4 naexp = ndcnts[Aaexp];
+
+  ub4 nrexp = ndcnts[Arexp];
+
+  ub4 nwiter = ndcnts[Awhile];
+
+  ub4 nblk  = ndcnts[Ablk];
+
+  ub4 nstmtlst = ndcnts[Astmts];
+
+  struct mempart ndpart[Acount];
+
   for (t = 0; t < Acount; t++) {
-    a = ndcnts[t];
-    if (a) info("%3u type %u %s",a,t,atynam(t));
+    cnt = ndcnts[t];
+    if (cnt) info("%3u type %u %s",a,t,atynam(t));
+    ndpart[t].nel = cnt;
   }
 
   if (nstmtlst == 0) ice(hi32,0,"nil stmt list for %u nodes",ap->len);
 
-  struct uexp *uexpp,*uexps = alloc(ndcnts[Auexp],struct uexp,Mo_nofill | Mo_ok0,"ast exp",nextcnt);
-  struct bexp *bexps = alloc(ndcnts[Abexp],struct bexp,Mo_nofill | Mo_ok0,"ast exp",nextcnt);
-  struct pexp *pexpp,*pexps = alloc(ndcnts[Apexp],struct pexp,Mo_nofill | Mo_ok0,"ast exp",nextcnt);
-  struct rexp *rexpp,*rexps = alloc(ndcnts[Arexp],struct rexp,Mo_nofill | Mo_ok0,"ast exp",nextcnt);
+  ndpart[Aid].siz = sizeof(struct id);
+  ndpart[Ailit].siz = sizeof(struct ilit);
 
-  struct id *idp,*ids = alloc(ndcnts[Aid],struct id,Mo_nofill | Mo_ok0,"ast id",nextcnt);
+  ndpart[Auexp].siz = sizeof(struct uexp);
+  ndpart[Abexp].siz = sizeof(struct bexp);
+  ndpart[Apexp].siz = sizeof(struct pexp);
+  ndpart[Aaexp].siz = sizeof(struct aexp);
 
-  struct ilit *ilitp,*ilits = alloc(nilit,struct ilit,Mo_nofill | Mo_ok0,"ast ilit",nextcnt);
-  ub2 *ilitfps = alloc(nilit,ub2,Mo_nofill | Mo_ok0,"ast ilit",nextcnt);
+  ndpart[Arexp].siz = sizeof(struct rexp);
 
-  struct stmtlst *stmtlp,*stmtls = alloc(nstmtlst,struct stmtlst,Mo_nofill | Mo_ok0,"ast stmtlst",nextcnt);
-//  struct if *ifs = alloc(ndcnts[Aif],struct if,Mo_nofill | Mo_ok0,"ast if",nextcnt);
+  ndpart[Aasgnst].siz = sizeof(struct asgnst);
 
-  struct args *rargp,*rargs = alloc(ndcnts[Aargs],struct args,Mo_nofill | Mo_ok0,"ast args",nextcnt);
+  ndpart[Afndef].siz = sizeof(struct fndef);
+  ndpart[Aparam].siz = sizeof(struct param);
+
+  ndpart[Ablk].siz = sizeof(struct blk);
+
+  ndpart[Awhile].siz = sizeof(struct witer);
+
+  ndpart[Astmts].siz = sizeof(struct stmtlst);
+  ndpart[Aprmlst].siz = sizeof(struct prmlst);
+
+  void *ndbas = allocset(ndpart,Acount,Mo_nofill,"ast tree",nextcnt);
+
+  struct id *idp,*ids = ndpart[Aid].ptr;
+
+  struct ilit *ilitp,*ilits = ndpart[Ailit].ptr;
+
+  struct uexp *uexpp,*uexps = ndpart[Auexp].ptr;
+  struct bexp *bexps = ndpart[Abexp].ptr;
+  struct pexp *pexpp,*pexps = ndpart[Apexp].ptr;
+  struct aexp *aexpp,*aexps = ndpart[Aaexp].ptr;
+
+  struct rexp *rexpp,*rexps = ndpart[Arexp].ptr;
+
+  struct asgnst *asgnstp,*asgnsts = ndpart[Aasgnst].ptr;
+
+  struct blk *blkp,*blks = ndpart[Ablk].ptr;
+
+  struct fndef *fndefp,*fndefs = ndpart[Afndef].ptr;
+  struct param *prmp,*prms = ndpart[Aparam].ptr;
+
+  struct witer *witerp,*witers = ndpart[Awhile].ptr;
+
+  struct stmtlst *stmtlp,*stmtls = ndpart[Astmts].ptr;
+
+  struct prmlst *rprmp,*rprms = ndpart[Aprmlst].ptr;
 
   ub4 *rep,*repool = alloc(ndcnts[Arep],ub4,Mo_nofill | Mo_ok0,"ast rep",nextcnt);
 
+  ub4 *idfpos = alloc(nid,ub4,Mo_nofill | Mo_ok0,"ast id",nextcnt);
+
   ap->uexps = uexps;
+  ap->bexps = bexps;
+  ap->aexps = aexps;
+
+  ap->rexps = rexps;
+
   ap->ids = ids;
   ap->ilits = ilits;
+
+  ap->asgnsts = asgnsts;
+
+  ap->fndefs = fndefs;
+  ap->prms = prms;
+
+  ap->witers = witers;
+
   ap->stmtls = stmtls;
 
   ap->repool = repool;
+
+  ap->nid = nid;
+
+  ub4 nscid = sa->nscid;
+  ub4 scopsiz = (uidcnt * nscid) >> 6;
+  ub8 *scids = alloc(scopsiz,ub8,Mo_nofill,"ast scopes",nextcnt);
+
+  ub2 hiblklvl = sa->hiblklvl;
+
+  ub1 blkbit = msb(hiblklvl+1);
+
+  if (cntbits(blkbit) > 1) blkbit++;
+
+  ub2 *scidns = alloc(nscid,ub2,Mo_nofill,"ast scopes",nextcnt);
+//  ub4 *varscs = alloc(sum,ub4,);
+
+  ap->nscid = nscid;
+  ap->scids = scids;
+  ap->scidns = scidns;
+  ap->blkbit = blkbit;
+
+  ub4 lfargs[Nodarg];
 
   enum Token tk;
 
@@ -267,63 +559,85 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
     ni = a & Atymsk;
 
-    while (am & 1) {
-      a0 = args[ai++];
-
-      t0 = a0 >> Atybit;
-      i0 = (a0 >> Aopbit) & Aopmsk;
-
-      ni0 = a0 & Atymsk;
-
-      switch (t0) {
-      case Aid:    ti = *args++; break;
-
-      case Ailits: break;
-
-      case Ailit:
-        ti = *args++;
-        ilitp = ilits + ni;
-        ilitp->val = tkbits[ti];
-        fpos = tkfpos[ti];
-        if ( (ni & 0xf) == 0) ilitfps[ni >> 4] = fpos;
-        else { dfp = fpos - fpos_ilit; ilitfps[ni] = min(dfp,hi16); }
-        fpos_ilit = fpos;
-        break;
-
-      case Aflit:  ti = *args++; break;
-      case Aslit:  ti = *args++; break;
-      case Aop:    op = (i0 >> Aopbit) & Aopmsk; break;
-      default:
-        if (t0 <= Atoken) {
-          cnt = (i0 >> Aopbit) & Aopmsk;
-          bits = ti >> 24; // todo rep
-        } else {
-          ni0 = ii;
-        }
-      }
-      am >>= 1;
-    } // each arg
+    ac = 0;
+    a0 = args[0];
+    if (a0 < (Aleaf << Atybit)) lfargs[ac++] = a0;
+    ainc = 2;
 
     switch (t) {
 
-    // nodes
-    case Auexp:   uexpp = uexps + ni;
-                  uexpp->e = args[0];
-                  uexpp->op = op;
+    // exp nodes
+    case Auexp:
+      uexpp = uexps + ni;
+      uexpp->e = a0;
+      uexpp->op = args[1] >> Aopbit;
     break;
 
-    case Apexp:   pexpp = pexps + ni;
-                  pexpp->l = args[0];
-                  pexpp->op = op;
+    case Apexp:
+      pexpp = pexps + ni;
+      pexpp->l = a0;
+      pexpp->op = args[1] >> Aopbit;
+    break;
+
+    case Aaexp:
+      aexpp = aexps + ni;
+      aexpp->id = a0;
+      aexpp->e = args[1];
+    break;
+
+    case Abexp: break;
+
+   // block
+    case Ablk:
+      blkp = blks + ni;
+      blkp->s = a0;
+      ainc = 1;
+    break;
+
+    case Aasgnst:
+      asgnstp = asgnsts + ni;
+      asgnstp->tgt = a0;
+      asgnstp->r = args[1];
+    break;
+
+   case Afndef:
+     fndefp = fndefs + ni;
+     fndefp->id = a0;
+     fndefp->plst = args[1];
+     fndefp->blk = args[2];
+   break;
+
+   case Aparam:
+     prmp = prms + ni;
+     prmp->id = a0;
+     if (am & 2) {
+       prmp->t = args[1];
+     } else ainc = 1;
+     if (am & 4) {
+       prmp->def = args[2];
+       ainc++;
+     }
+    break;
+
+    // iters
+    case Awhile:
+      witerp = witers + ni;
+      witerp->e = a0;
+      witerp->tb = args[1];
+      if (am & 4) {
+        witerp->fb = args[2];
+        ainc = 3;
+      }
     break;
 
     // leaves
-    case Aid:     idp = ids + ni;
-                  idp->id = bits;
-//                  idfpos[ni] = fpos;
-    break;
+    case Aid:
+    case Ailit:
+    case Aflit:
+    case Aslit:
+    case Ailits: break;
 
-    case Ailit: break;
+    case Aop:    break;
 
     // lists
     case Arexp:     cnt = *args++;
@@ -332,30 +646,63 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
                     len = precexp(ap,repool + repos,repool + repos + cnt,args,cnt);
                     rexpp->len = len;
                     repos += cnt * 2;
-                    args += cnt;
+                    ainc = cnt;
     break;
 
-    case Aargs:     cnt = *args++;
-                    rargp = rargs + ni;
-                    rargp->pos = repos;
-                    rargp->cnt = cnt;
+    case Aprmlst:   cnt = *args++;
+                    rprmp = rprms + ni;
+                    rprmp->pos = repos;
+                    rprmp->cnt = cnt;
                     memcpy(repool + repos,args,cnt * 4);
                     repos += cnt;
-                    args += cnt;
+                    ainc = cnt;
     break;
+
     case Astmts:    cnt = *args++;
                     stmtlp = stmtls + ni;
                     stmtlp->cnt = cnt;
                     stmtlp->pos = repos;
                     memcpy(repool + repos,args,cnt * 4);
                     repos += cnt;
-                    args += cnt;
+                    ainc = cnt;
     break;
 
     case Acount: goto end;
 
-    default: break;
+//    default: break;
     }
+    args += ainc;
+
+    for (la = 0; la < ac; la++) {
+      a0 = lfargs[la];
+      t0 = a0 >> Atybit;
+      ni0 = a0 & Atymsk;
+
+      val = vals[vi++];
+
+      switch (t0) {
+      case Aid:
+        idp = ids + ni0;
+        idp->id = val & hi32;
+        idfpos[ni0] = val >> 32;
+      break;
+
+      case Ailits: break;
+
+      case Ailit:
+        bits = *args++;
+        ilitp = ilits + ni;
+        ilitp->val = bits;
+        break;
+
+      case Aflit:  bits = *args++; break;
+      case Aslit:  bits = *args++; break;
+
+      default: break;
+
+    }
+  } // postporcess leaf args
+
     rp++;
   } while (1);
 
@@ -365,10 +712,12 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
   ap->root = nstmtlst - 1;
 
+  process(ap);
+
   return ap;
 }
 
 enum Astyp prd2nod[Pcount] = {
-  [Pwhile] = Aiter,
-  [Pexpr_0] = Apexp
+  [Pwhile] = Awhile,
+  [Pexp]   = Apexp
 };

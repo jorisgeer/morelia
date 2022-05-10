@@ -25,10 +25,7 @@ enum Uop { Uinc,Udec };
 
 enum Bop { Badd,Bmul };
 
-struct stmtlst {
-  ub4 pos;
-  ub2 cnt;
-};
+enum Role { Lhs,Rhs };
 
 struct ilit { // term ilit
   ub4 val;
@@ -36,6 +33,11 @@ struct ilit { // term ilit
 
 struct id { // term id
   ub4 id;
+  ub4 def;  // defining var, self if none
+  ub4 ofs;  // frame offset
+  ub4 scid; // scope id
+  ub1 lvl;
+  enum Role rol;
 };
 
 // nonterms
@@ -49,9 +51,42 @@ struct bexp {
   enum Bop op;
 };
 
-struct pexp {
+struct aexp {
+  ub4 id;
+  ub4 e;
+};
+
+struct pexp { // partial binexp
   ub4 l;
   enum Bop op;
+};
+
+struct asgnst {
+  ub4 tgt;
+  ub4 r;
+};
+
+struct blk {
+  ub4 s;
+};
+
+struct param {
+  ub4 id;
+  ub4 t;
+  ub4 def;
+};
+
+struct fndef {
+  ub4 id;
+  ub4 scid0,scid1;
+  ub4 plst;
+  ub4 blk;
+  ub4 ret;
+};
+
+struct witer {
+  ub4 e;
+  ub4 tb,fb;
 };
 
 struct rexp {
@@ -60,14 +95,14 @@ struct rexp {
   ub2 len;
 };
 
-struct args {
+struct prmlst {
   ub4 pos;
   ub2 cnt;
 };
 
-struct loop {
-  ub4 iter;
-  ub4 body;
+struct stmtlst {
+  ub4 pos;
+  ub2 cnt;
 };
 
 struct ast {
@@ -79,7 +114,30 @@ struct ast {
   struct ilit *ilits;
   struct uexp *uexps;
   struct pexp *pexps;
+  struct bexp *bexps;
+  struct aexp *aexps;
+
   struct rexp *rexps;
 
+  struct asgnst *asgnsts;
+
+  struct blk *blks;
+
+  struct fndef *fndefs;
+  struct param *prms;
+
+  struct witer *witers;
+
+  ub4 nid;
+  ub4 uidcnt;
+
+  ub4 *idfpos;
+
   ub4 *repool;
+
+  ub8 *scids;
+  ub2 *scidns;
+  ub4 nscid;
+
+  ub1 blkbit;
 };
