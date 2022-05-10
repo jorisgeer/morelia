@@ -107,13 +107,14 @@ static int docc(const ub1 *src,ub4 slen,bool isfile)
 
   if (sa.ndcnt == 0) {
     info("%s is empty",ls.name);
+    return 0;
   }
 
   if (globs.rununtil == 4) { info("until syn %u",globs.rununtil); return 0; }
 
   ap = mkast(&sa,&ls);
 
-  timeit2(&T0,ls.srclen,"lex + parse+ took ");
+  timeit2(&T1,ls.srclen,"ast took ");
 
   if (rv) return 1;
 

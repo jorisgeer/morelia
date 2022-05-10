@@ -1005,7 +1005,7 @@ static ub2 addirtok(enum Token tk,ub2 rul,ub2 alt)
     if (d == hi16) {
       if (ndirprd2 >= Dirprd) serror2(lnx,rul,tk,"exceeding %u dir tokens",Dirprd);
       d = ndirprd2++;
-      sinfo2(lnx,rul,tk,"add dirtok %u alt %u",d,alt);
+      svrb2(lnx,rul,tk,"add dirtok %u alt %u",d,alt);
     } else if (d >= Dirprd) d -= ofs;
     if (d >= Dirprd) serror2(lnx,rul,tk,"exceeding %u dir tokens",Dirprd);
     np = dir2prdnams + d * Dirprdnam;
@@ -1207,7 +1207,7 @@ static int mktables(void)
         if (tnc == 1) { // dirtok
           rxp = rules + tr;
           xsp = rxp->second0;
-          sinfo2(lnx,tr,tk,"i %u rule %s",i,rp->name);
+          svrb2(lnx,tr,tk,"i %u rule %s",i,rp->name);
           sec = xsp[tk];
           nse = addirtok(tk,tr,ta);
           svrb2(lnx,r,tk,"i %u nse %u sec %s",i,nse,printsec(sec,buf,blen));
@@ -2107,7 +2107,7 @@ static int rdspec(cchar *fname,ub1 *src)
       dsc[dscpos++] = argc + '0';
     }
 
-    if (t == Cnl || t == Chsh || reptok) { // end of alt
+    if (t == Cnl || t == Chsh) { // end of alt
       if (optlvl) serror(n,"unbalanced group at pos %u",optpos[optlvl-1]);
       rp->dsclen[acur] = dscpos;
       rp->altlens[acur] = scur;
@@ -2117,7 +2117,7 @@ static int rdspec(cchar *fname,ub1 *src)
 
     if (t == Cnl) {
       st = Spat0;
-    } else if (t == Chsh || reptok) {
+    } else if (t == Chsh) {
       st = Scmt;
       nxst = Spat0;
     } else { // next sym
@@ -2134,7 +2134,7 @@ static int rdspec(cchar *fname,ub1 *src)
 
       if (scur == 0) serror(n,"rule %s empty alt %u",ntnam(nt0),acur);
 
-      for (a = 0; a < acur; a++) { // check dup
+      for (a = 1; a < acur; a++) { // check dup
         sp2 = rp->alts + a * Altlen;
         cp2 = rp->ctls + a * Altlen;
         slen = rp->altlens[a];
@@ -2515,7 +2515,10 @@ static void wrprd(struct bufile *fp,struct bufile *dfp)
     pnam = prdnams + ve * Prdnam;
     n = rp->prdnlen[a];
     if (n) len = mysnprintf(pnam,0,Prdnam,"%.*s",n,rp->prdnam[a]);
-    else len = mysnprintf(pnam,0,Prdnam,"%s_%u",rp->name,a);
+    else {
+      len = mysnprintf(pnam,0,Prdnam,"%s_%u",rp->name,a);
+      if (rp->altcnt > 1) len += mysnprintf(pnam,len,Prdnam,"_%u",a);
+    }
     if (ep->nve > 1) len += mysnprintf(pnam,len,Prdnam,"_%u",si);
 
     maxprdnam = max(maxprdnam,len);
@@ -2539,7 +2542,7 @@ static void wrprd(struct bufile *fp,struct bufile *dfp)
   myfprintf(dfp,"static const char prodnampool[%u] = \n  \"%s\";\n\n",pos1,buf1);
   myfprintf(dfp,"static const ub2 prodnampos[%u] = { %s };\n\n",vtablen,buf2);
 
-  myfprintf(fp,"static const ub2 vprdmap[%u] = { %s };\n\n",vtablen,buf4);
+  myfprintf(fp,"static const ub2 vprdmap[%u] = { %s }; // rule.se\n\n",vtablen,buf4);
 
   myfprintf(fp,"// s0.1 rep.1 re1.1 si.2 len.4 \n");
   myfprintf(fp,"static const ub1 syntabeas[%u] = {\n%.*s};\n\n",vtablen,pos3,buf3);
@@ -3059,8 +3062,8 @@ static int wrfile(void)
       myfprintf(&sfp,"\n%3u   ",rp->lnos[a]);
       if (rp->rulrep) myfputc(&sfp,rp->rulrep == 1 ? '*' : '+');
       myfprintf(&sfp,"%.*s",rp->dsclen[a],rp->desc + a * Dsclen);
+      if (rp->prdnlen[a]) myfprintf(&sfp,"\t %.*s\n",rp->prdnlen[a],rp->prdnam[a]);
     }
-    myfprintf(&sfp,"\t %.*s\n",rp->prdnlen[a],rp->prdnam[a]);
   }
 
   myfprintf(&sfp,"\n#endif\n");

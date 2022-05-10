@@ -29,17 +29,24 @@ start stmts
 table
 
 stmts
-  *stmt? +;
+  *stmt?` +;
+
+param
+  Id ?( ?( : expr` ?) = expr` ?)
+
+prmlst
+  *param` +,
 
 stmt
-  ? Id := expr
+  ? Id = expr `asgnst
   ? expr`
   Break
-  If expr` : block ?( Else : block ?) `if
-  While expr` : block ?( Else : block ?) `while
+  If expr` : block` ?( Else : block` ?) `if
+  While expr` : block` ?( Else : block` ?) `while
+  Def Id ( prmlst` ) : block` `fndef
 
 block
-  { stmts } `block=0
+  { stmts` } `block=0
   stmt `blk-stmt
 
 # --- expressions ---
@@ -51,7 +58,11 @@ atom
   Id `atom-id
   Nlit `atom-nlit
   Slit `atom-slit
-  ( expr? ) `grpexp
+  ( expr?` ) `grpexp
+
+pexp
+  +atom` +(Pm|Op|Ast)` `exp=1
 
 expr
-  +atom` +(Pm|Op|Ast)` `exp=1
+  ? Id := expr` `asexp
+  ? pexp

@@ -48,7 +48,14 @@ ub4 nxpwr2(ub4 x,ub1 *bit)
   return x;
 }
 
-ub2 msb(ub8 x)
+ub1 msb(ub4 x)
+{
+  ub1 b = 31;
+  while (b && (x & (1U << b)) == 0) b--;
+  return b;
+}
+
+ub2 msb8(ub8 x)
 {
   ub2 b = 63;
   while (b && (x & (1UL << b)) == 0) b--;

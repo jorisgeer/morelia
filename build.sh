@@ -9,8 +9,8 @@ set -eu
 compiler=gcc
 analyzer=clang
 
-copt='-O1 -march=native'
-copt_t='-O1 -march=native'
+copt='-O2 -march=native'
+copt_t='-O2 -march=native'
 
 # -fanalyzer
 cdiag='-Wall -Wextra -Wshadow -Wundef -Wno-unused -Wno-padded -Wno-char-subscripts -Werror -Wstack-usage=65536'
@@ -93,7 +93,7 @@ cc()
 
   if [ -f "$tgt" ]; then
     for dep in "$@"; do
-      if [ -f "$dep" -a "$dep" -nt "$tgt" ]; then
+      if [ "$dep" -nt "$tgt" ]; then
         newer=1
       fi
     done
@@ -251,7 +251,7 @@ while [ $# -ge 1 ]; do
   case "$1" in
   '-a') ana=1
 #    always=1
-    dogen=1
+#    dogen=1
     compiler=$analyzer
     cflags=$anacflags
     cflags_t=$anacflags ;;

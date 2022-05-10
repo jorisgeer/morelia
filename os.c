@@ -461,8 +461,11 @@ static Noret void mysigact(int sig,siginfo_t *si,void *pp)
   switch(sig) {
   case SIGSEGV:
     adr = si->si_addr;
-    nearby = nearblock(adr);
-    pos = mysnprintf(buf,0,sizeof buf,"\nsigsegv at %p near %p%c",adr,nearby,pp ? ' ' : '.');
+    pos = mysnprintf(buf,0,sizeof buf,"\nsigsegv at %p",adr);
+    if (adr) {
+      nearby = nearblock(adr);
+      pos += mysnprintf(buf,pos,sizeof buf," near %p",nearby);
+    }
     break;
 
   case SIGBUS:

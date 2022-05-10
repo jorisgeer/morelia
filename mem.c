@@ -417,6 +417,7 @@ void *allocset_fln(ub4 fln,struct mempart *parts,ub2 npart,ub2 fil,const char *d
 
   len2 = (len + align0) / align0;
   bas = alloc_fln(fln,len2,align0,fil,desc,counter);
+  parts[0].ismmap = (len2 * align0) >= mmap_thres;
   len = 0;
   for (part = 0; part < npart; part++) {
     nel = parts[part].nel;
@@ -424,7 +425,6 @@ void *allocset_fln(ub4 fln,struct mempart *parts,ub2 npart,ub2 fil,const char *d
     align = min(siz,16);
     len = align4(len,align);
     parts[part].ptr = bas+len;
-    parts[part].ismmap = (len2 * align0) >= mmap_thres;
     len += nel * siz;
   }
   return bas;

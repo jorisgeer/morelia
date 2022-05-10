@@ -48,11 +48,11 @@ token
 #  sc
   qas 4
 #  aas
-#  das
+  das 4
 #  mulas
   colon 4
   sepa 4
-#  comma
+  comma 4
 #  dot
 #  exp
 
@@ -73,11 +73,11 @@ set
   rc )
   cl :
   sm ;
-#  ca ,
+  ca ,
   dt .
   pm +-
   st *
-#  eq =
+  eq =
 #  op /%@<>&|^!
   o1 /
   o2 %
@@ -100,7 +100,7 @@ keyword
 #  as
   break 1
 #  continue
-#  def
+  def
 #  del
 #  elif
   else
@@ -207,12 +207,15 @@ slit
   R0=0;
 2 len = slitx - slitpos;
 2 switch(len) {
-2 case 1:
+2 case 1: x1 = slitpool[slitpos]; if (x1 < Slit_len) { atrs[dn] = x1; break; } Fallthrough
 2 case 2:
-2 case 3: tkbits[dn] = *(ub4 *)(slitpool + slitpos) | (len << 30); break;
+2 case 3: tkbits[bn] = *(ub4 *)(slitpool + slitpos);
+2         atrs[dn] = len | Slit_len;
+2         break;
 2 default:
 2   id = slitgetadd(slitpool,slitx);
-2   tkbits[dn] = id;
+2   tkbits[bn++] = id;
+2   atrs[dn] = min(len,Slit_len - 1) | Slit_len;
 2 }
 .
 1 len = n - N;
@@ -230,19 +233,25 @@ slit
 # ----------------------
 id1
 1 id1cnt++;
-2 tkbits[dn] = prvc1 | Idctl_1;
+2 id = id1getadd(prvc1);
+2 atrs[dn] = id;
 
 id2
-2 kwd = lookupkw2(sp[N],sp[N+1]);
-1 id2cnt++;
-1 id2chr[prvc1] = 1;
-1 id2chr[prvc2] = 2;
-2 if (kwd < T99_kwd) tk = kwd;
-2 else {
+  kwd = lookupkw2(prvc1,prvc2);
+  if (kwd < T99_kwd) {
+1   dn++;
+2   tk = kwd;
+  } else {
+1   id2cnt++;
+1   id2chr[prvc1] = 1;
+1   id2chr[prvc2] = 2;
 2   tk = Tid;
 2   id = id2getadd(prvc1,prvc2);
-2   tkbits[dn] = id | Idctl_2;
-2 }
+2   tkbits[bn++] = id;
+2   atrs[dn] = Idlen_2;
+  }
+2 tks[dn] = tk; setfpos(dn,n)
+2 dn++;
 
 id
   len = idxpos - idnampos;
@@ -252,17 +261,18 @@ id
 1 idnplen += len;
 1 exp_first0(hc);
 2 kw = lookupkw(len,hc);
-2 if (kw < t99_count) { setkwd(tk,tkbits[dn],kw); if (Tkgrp > 1) tkgrps[kwgrps[tk]]++; }
+2 if (kw < t99_count) { setkwd(tk,atrs[dn],kw); if (Tkgrp > 1) tkgrps[kwgrps[tk]]++; }
 2 else {
 2   tk = Tid;
 2   blt = lookupblt(len,hc);
-2   if (blt < B99_count) { tkbits[dn] = blt | Idctl_blt; bltcnt++; }
+2   if (blt < B99_count) { tkbits[bn++] = blt; atrs[dn] = Idctl_blt; bltcnt++; }
 2   else {
-2     id = idgetadd(idxpos,hc);
-2     tkbits[dn] = id;
+2     x4 = idgetadd(idxpos,hc);
+2     tkbits[bn++] = x4;
+2     atrs[dn] = Idlen_n;
 2   }
 2 }
-2 tks[dn] = tk; tkfpos[dn] = n;
+2 tks[dn] = tk; setfpos(dn,n)
 2 dn++;
 
 # ----------------------
@@ -283,18 +293,18 @@ dodent
   if (dent > dentst[dentlvl]) {
     if (dentlvl < Dent-1) dentlvl++;
     dentst[dentlvl] = dent;
-2   tks[dn] = Tco; tkfpos[dn] = n;
+2   tks[dn] = Tco; setfpos(dn,n)
     dn++;
   } else {
     while (dent < dentst[dentlvl]) {
-2     tks[dn] = Tcc; tkfpos[dn] = n;
+2     tks[dn] = Tcc; setfpos(dn,n)
       hasdent=1;
       dn++;
       if (dentlvl) dentlvl--;
       else break;
     }
     if (hasdent == 0) {
-2     tks[dn] = Tsepa; tkfpos[dn] = n;
+2     tks[dn] = Tsepa; setfpos(dn,n)
     dn++;
     }
   }
@@ -399,30 +409,30 @@ root
   : . colon
   ; . sepa
 
-#  , . comma
+  , . comma
 #  . . dot
 
 # operators
 #  ** . exp
 #  *= . mulas
-  * . ast 2. tkbits[dn] = Lomul;
+  * . ast 2. atrs[dn] = Lomul;
 
-#  op oper . 2. tkbits[dn] = c;
-  / oper . 2. tkbits[dn] = Lodiv;
-  % .    . 2. tkbits[dn] = c;
-  @ .    . 2. tkbits[dn] = c;
-  < oper . 2. tkbits[dn] = Lolt;
-  > oper . 2. tkbits[dn] = Logt;
-  & oper . 2. tkbits[dn] = c;
-  | oper . 2. tkbits[dn] = Loor;
-  ^ .    . 2. tkbits[dn] = c;
-  ! .    . 2. tkbits[dn] = c;
+#  op oper . 2. atrs[dn] = c;
+  / oper . 2. atrs[dn] = Lodiv;
+  % .    . 2. atrs[dn] = c;
+  @ .    . 2. atrs[dn] = c;
+  < oper . 2. atrs[dn] = Lolt;
+  > oper . 2. atrs[dn] = Logt;
+  & oper . 2. atrs[dn] = c;
+  | oper . 2. atrs[dn] = Loor;
+  ^ .    . 2. atrs[dn] = c;
+  ! .    . 2. atrs[dn] = c;
 
 # pm= . aas.
 
-  pm . pm. 2. tkbits[dn] = c;
+  pm . pm. 2. atrs[dn] = c;
 
-#  = . das
+  = . das
 
 # escaped newline
   \`nl . . donl
@@ -433,13 +443,13 @@ root
 # 2-3 char operators
 # ---------------------
 oper
-#  op= root aas 2. tkbits[dn] |= (c << 8);
-#  op  root op  2. tkbits[dn] |= (c << 8);
+#  op= root aas 2. atrs[dn] |= (c << 8);
+#  op  root op  2. atrs[dn] |= (c << 8);
 
-  < root . 2. tkbits[dn] = Loshl;
-  > root . 2. tkbits[dn] = Loshr;
-  & root . 2. tkbits[dn] = Loand;
-  | root . 2. tkbits[dn] = Loor;
+  < root . 2. atrs[dn] = Loshl;
+  > root . 2. atrs[dn] = Loshr;
+  & root . 2. atrs[dn] = Loand;
+  | root . 2. atrs[dn] = Loor;
 
 #  = root aas
   ot -root op
@@ -472,7 +482,7 @@ id1
 id2
   an id . .idxpos = idnampos + 3;\
           .idnampool[idnampos] = prvc1; idnampool[idnampos+1] = prvc2; idnampool[idnampos+2] = c;
-  ot -root 2.id id2
+  ot -root . id2
 
 id
   an . . .idnampool[idxpos++] = c;
