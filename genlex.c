@@ -2832,7 +2832,7 @@ static int wrfile(void)
 
     myfprintf(&lhfp,"#define Hshseed   0x%x\n",hshseed);
     myfprintf(&lhfp,"#define Hshdseed  0x%x\n",dhshseed);
-    myfprintf(&lhfp,"#define Hshdshift 0x%x\n",dunhshshift);
+    myfprintf(&lhfp,"#define Hshdshift 0x%x\n\n",dunhshshift);
 
     if (havesfp) {
       info("wrote %s",shdrname);
@@ -3315,9 +3315,7 @@ static int wrfile(void)
           if (addtrace && pass1) bpos += mysnprintf(buf,bpos,blen,"tracetk(\"%3u %.*s\");\n  ",lno,toklens[tk],toks[tk]);
           if (omittoken == 0) {
             if (pass2) {
-              bpos += mysnprintf(buf,bpos,blen,"tks[dn] = T%.*s; tkfpos[dn] = n; ",toklens[tk],toks[tk]);
-              grp = tokgrps[tk];
-              if (tkhigrp && grp == 0) bpos += mysnprintf(buf,bpos,blen,"tkgrps[%u]++; ",grp);
+              bpos += mysnprintf(buf,bpos,blen,"tks[dn] = T%.*s; setfpos(dn,n) ",toklens[tk],toks[tk]);
             }
             bpos += mysnprintf(buf,bpos,blen,"dn++;\n  ");
           }
@@ -3386,7 +3384,7 @@ static int wrfile(void)
         bpos = wrcode(buf,bpos,blen,tp->codlen,tp->code,lno);
       }
       if (tk < nltok) {
-        if (pass2) bpos += mysnprintf(buf,bpos,blen,"  tks[dn] = T%.*s; tkfpos[dn] = n;",toklens[tk],toks[tk]);
+        if (pass2) bpos += mysnprintf(buf,bpos,blen,"  tks[dn] = T%.*s; setfpos(dn,n)",toklens[tk],toks[tk]);
         else if (addtrace) bpos += mysnprintf(buf,bpos,blen,"tracetk(\"%3u %.*s\");\n",lno,toklens[tk],toks[tk]);
         bpos += mysnprintf(buf,bpos,blen,"dn++;\n");
       }
@@ -3398,7 +3396,7 @@ static int wrfile(void)
     if (tktabcnt) {
       bpos += mysnprintf(buf,bpos,blen,"\nlx%c_%s_gentk_%u:\n  ",passc,st0nam,st0);
       if (pass2) {
-        bpos += mysnprintf(buf,bpos,blen,"tks[dn] = tktab%c_%s[t]; tkfpos[dn] = n; ",passc,st0nam);
+        bpos += mysnprintf(buf,bpos,blen,"tks[dn] = tktab%c_%s[t]; setfpos(dn,n) ",passc,st0nam);
         if (tkhigrp && logrp == 0) bpos += mysnprintf(buf,bpos,blen,"tkgrps[tkgtab%c_%s[t]]++; ",passc,st0nam);
       }
       if (pass2) {

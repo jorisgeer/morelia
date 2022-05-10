@@ -22,10 +22,11 @@
 #define Tkgrps 16
 
 struct lexsyn {
-  ub4 tkcnt;
+  ub4 tkcnt,tbcnt;
   const ub1 *toks; // enum Token tok.h
-  const ub4 *tkbits;
-  const ub4 *tkpos;
+  const ub1 *atrs;
+  const ub8 *bits;
+  const ub2 *dfps;
 
   void *tkbas;
 
@@ -41,7 +42,8 @@ struct lexsyn {
   ub4 nlitcnt,nlittop;
 
   ub2 hidepth;
-  ub4 idcnt;
+  ub4 idcnt,uidcnt;
+  ub2 uid1cnt,uid2cnt;
 
   ub4 tkgrps[Tkgrps];
 
@@ -53,14 +55,19 @@ struct lexsyn {
 
 #define Tkpad 10
 
-#define Idctl_1   0xe0000000
-#define Idctl_2   0xc0000000
-#define Idctl_blt 0xa0000000
-#define Idctl_dun 0x80000000
-#define Idctl_cls 0x60000000
+#define Idlen_2   0x80
+#define Idlen_n   0x81
 
-#define Litflt (1U << 31)
-#define Litasc (1U << 30)
+#define Idpool    0x3fffffff
+
+#define Idctl_blt 0x82
+#define Idctl_dun 0x83
+#define Idctl_cls 0x84
+
+#define Slit_len 0x80
+
+#define Litflt 0x85
+#define Litasc 0x86
 
 enum Packed8 Lop { Lolit,Lorelor,Loreland,Lone,Loeq,Loshl,Loshr,Lonot,Loxor,Loneg,Loor,Loand,Loumin,Loupls,Lomin,Lopls,Lomul,Lodiv,Lomod,Loas,Lolt,Logt,Lole,Loge,Loqst,Locol,Locom,Locnt };
 
@@ -68,7 +75,7 @@ enum Inctype { Inone,Isys,Iuser };
 
 extern int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *lsp,ub8 T0);
 extern int lexstr(const unsigned char * restrict str,ub2 slen,struct lexsyn *lsp,ub8 T0);
-extern ub2 id2nam(ub2 id);
+extern ub1 *idnam(ub4 id);
 
 extern void inilex(void);
 extern cchar *lex_info(void);

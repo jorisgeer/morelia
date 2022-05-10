@@ -45,7 +45,7 @@ static ub4 msgfile = Shsrc_lex;
 // max token stream len
 #define Tokencnt (1U << 24)
 
-// #define Emitdetail
+#define Emitdetail
 
 // #define Addtrace
 
@@ -348,9 +348,12 @@ static ub1 *nlitpool;
 static ub4 flitpos;
 
 // idents
-static ub4 id1cnt,id2cnt,uidcnt;
+static ub4 uidcnt,uid1cnt,uid2cnt;
 static ub4 idsketch;
 
+static ub4 idtablen;
+static ub4 *idtab;
+static ub4 *idntab;
 static ub4 idnampos,idnplen;
 static ub1 *idnampool;
 
@@ -385,51 +388,55 @@ static void mkidhash(ub4 estcnt,ub4 cnt)
   info("%u entry id hash from u/id %u/%u",idhshlen,estcnt,cnt);
 }
 
-static ub4 idcheck(ub4 nam1,ub2 len,ub4 v)
+static ub4 idcheck(ub4 nam,ub2 len,ub4 v)
 {
   ub4 x = idhsh[v];
-  ub4 np;
+  ub4 np,id;
 
   if (x == 0) { // slot free
     idhsh[v] = np = idnampos;
 //    vrb("add '%s'",idnampool+idnampos);
-    idnampos = align4(nam1 + 1);
+    idnampos = align4(nam + 1);
     idhshcnt++;
     if (len > idnmax) idnmax = len;
-    return np; // new
-  } else if (samestr1(idnampool,x,idnampos,len)) return x; // existing: common
+    id = uidcnt++;
+    if (id >= idtablen) ice(hi32,"id '%.*s' exceeds %u",len,idnampool+nam,id);
+    idtab[id] = np;
+    idntab[np] = id;
+    return id; // new
+  } else if (samestr1(idnampool,x,idnampos,len)) return idntab[x]; // existing: common
   else {
     idhshmis++;
     return 0;
   }
 }
 
-// get or if none insert id
-static ub4 idgetadd(ub4 nam1,ub4 hc)
+// get or if none insert id. returns idnid.idid
+static ub4 idgetadd(ub4 nam,ub4 hc)
 {
   ub4 v,v0;
   ub4 x;
   ub4 hc2;
-  ub2 len = nam1 - idnampos;
+  ub2 len = nam - idnampos;
 
   hc = (hc >> idhshbit) ^ hc;
   v = hc & idhshmask;
 
-  idnampool[nam1] = 0;
+  idnampool[nam] = 0;
 
-  x = idcheck(nam1,len,v);
+  x = idcheck(nam,len,v);
   if (x) return x;
   else { // probe once with second hash
     hc2 = hc >> idhshbit;
     v += hc2 & idhshmask;
     if (v >= idhshlen) v -= idhshlen;
-    x = idcheck(nam1,len,v);
+    x = idcheck(nam,len,v);
     if (x) return x;
     else {
       v0 = v;
       do { // linear
         v = (v + 1) & idhshmask;
-        x = idcheck(nam1,len,v);
+        x = idcheck(nam,len,v);
         if (x) return x;
       } while (v != v0);
       ice(0,"TODO resize id hash table overflow at %u of %u",idhshcnt,idhshlen);
@@ -460,12 +467,27 @@ static ub2 id2getadd(ub1 c1,ub1 c2)
   if (id != hi16) {
     return id;
   }
-  id2tab[ndx] = id2cnt;
-  id2nams[id2cnt] = ndx;
-  return id2cnt++;
+  id2tab[ndx] = uid2cnt;
+  id2nams[uid2cnt] = ndx;
+  return uid2cnt++;
 }
 
-ub2 id2nam(ub2 id)
+static ub1 id1tab[256];
+static ub1 id1inv[256];
+
+static ub1 id1getadd(ub1 c)
+{
+  ub1 id = id1tab[c];
+
+  if (id == 0xff) {
+    id = uid1cnt++;
+    id1tab[c] = id;
+    id1inv[id] = c;
+  }
+  return id;
+}
+
+static void id2nam(ub2 id,ub1 *dst)
 {
   ub2 ndx = id2nams[id];
   ub2 a,b;
@@ -473,7 +495,25 @@ ub2 id2nam(ub2 id)
   a = ndx >> id2shift1;
   b = ndx & id2mask1;
 
-  return id2ch2imp[b] | (id2ch1imp[a] << 8);
+  dst[0] = id2ch1imp[a];
+  dst[1] = id2ch2imp[b];
+  dst[2] = 0;
+}
+
+ub1 *idnam(ub4 id)
+{
+  ub4 nid;
+  ub2 x2;
+  static ub1 buf[4];
+
+  if (id < uid1cnt) { *buf = id1inv[id]; buf[1] = 0; return buf; }
+  else if (id < uid2cnt) { id2nam(id - uid1cnt,buf); return buf; }
+  else {
+    info("id %u %u %u",id,uid1cnt,uid2cnt);
+    nid = idtab[id - uid1cnt - uid2cnt];
+    info("id %u nid %u",id,nid);
+    return idnampool + nid;
+  }
 }
 
 static void mkid2tab(void) {
@@ -488,6 +528,7 @@ static void mkid2tab(void) {
     if (x & 1) { id2ch1map[c] = n1; id2ch1imp[n1++] = c; }
     if (x & 2) { id2ch2map[c] = n2; id2ch2imp[n2++] = c; }
   }
+  vrb("id2map %u,%u",n1,n2);
   if ( (n1 | n2) == 0) return;
   id2nch1 = nxpwr2(n1,&id2shift1);
   id2nch2 = nxpwr2(n2,&id2shift2);
@@ -755,46 +796,70 @@ static ub4 tkstats[T99_count];
 
 static void doemit(struct lexsyn *lsp,cchar *name)
 {
-  const ub1 *tks = lsp->toks;
-  const ub4 *tkbits = lsp->tkbits;
-  const ub4 *tkfpos = lsp->tkpos;
+  const enum Token *tks = lsp->toks;
+  const ub1 *atrs = lsp->atrs;
+  const ub8 *bits = lsp->bits;
+  const ub2 *dfps = lsp->dfps;
   ub4 tkcnt = lsp->tkcnt;
   const ub1 *slitpool = lsp->slitpool;
 
   bool emit = (globs.emit & 1);
   enum Token tk=0;
-  ub4 dn;
+  ub1 atr;
+  ub4 dn,bn=0;
+  ub8 x8=0;
   ub4 x4;
   ub2 x2;
-  ub4 fpos;
+  ub2 dfp;
+  ub4 fpos=0;
   ub4 pos;
   ub4 len = 256;
   char buf[256];
+  char sbuf[8];
+  cchar *str;
 
   if (emit) msglog(name,"tks","lex");
   for (dn = 0; dn < tkcnt; dn++) {
     tk = tks[dn];
-    if (tk >= T99_count) ice(0,"invalid token %u",tk);
-    x4 = tkbits[dn];
-    fpos = tkfpos[dn];
-    pos = mysnprintf(buf,0,len,"%-10s",tknam(tk));
+    atr = atrs[dn];
+    dfp = dfps[dn];
+    fpos += dfp;
+    if (tk >= T99_count) ice(fpos,"invalid token %u",tk);
+    pos = mysnprintf(buf,0,len,"%3u %-10s",dn,tknam(tk));
 
 #ifdef Emitdetail
     switch (tk) {
-    case Tid:   if (x4 & Idctl_1) buf[pos++] = x4 & 0xff;
-                else if (x4 & Idctl_2) {
-                  x2 = id2nam(x4 & hi16);
-                  buf[pos++] = x2 & 0xff; buf[pos++] = x2 >> 8;
-                } else pos += mysnprintf(buf,pos,len,"%s",idnampool + x4);
-                break;
-    case Tnlit: if (x4 & Litflt) {
-                  pos += mysnprintf(buf,pos,len,"%x flt",x4 & ~Litflt);
+    case Tid:   if (atr < Idlen_2) {
+                  buf[pos++] = id1inv[atr];
                 } else {
-                  if (x4 & Litasc) pos += mysnprintf(buf,pos,len,"%s",nlitpool + (x4 & ~Litasc));
-                  else pos += mysnprintf(buf,pos,len,"%u",x4);
+                  x8 = bits[bn++];
+                  if (atr == Idlen_n) pos += mysnprintf(buf,pos,len,"%s",idnam(x8));
+                  else { id2nam(x8,buf + pos); pos += 2; }
                 }
                 break;
-    case Tslit: if (x4 < hi24) pos += mysnprintf(buf,pos,len,"%3x '%s'",x4,chprints(slitpool + x4),32);
+    case Tnlit: x8 = bits[bn++];
+                if (atr == Litflt) {
+                  pos += mysnprintf(buf,pos,len,"%lx flt",x8);
+                } else {
+                  if (atr == Litasc) pos += mysnprintf(buf,pos,len,"%s",nlitpool + x8);
+                  else pos += mysnprintf(buf,pos,len,"%lu",x8);
+                }
+                break;
+    case Tslit: if (atr < Slit_len) pos += mysnprintf(buf,pos,len,"'%s'",chprint(atr));
+                else {
+                  x4 = bits[bn++];
+                  len = atr & ~Slit_len;
+                  if (len > 3) str = chprints(slitpool + x4,32);
+                  else {
+                    *(ub4 *)sbuf = x4;
+                    buf[pos++] = sbuf[0];
+                    buf[pos++] = sbuf[1];
+                    if (len == 3) buf[pos++] = sbuf[2];
+                    buf[pos] = 0;
+                    str = chprints(sbuf,8);
+                  }
+                  pos += mysnprintf(buf,pos,len,"%3x.%u '%s'",x4,len,str);
+                }
                 break;
     default:    break;
     }
@@ -803,6 +868,8 @@ static void doemit(struct lexsyn *lsp,cchar *name)
   }
   if (emit) msglog(nil,nil,nil);
 }
+
+#define setfpos(dn,n) dfps[dn] = n - prvfp; prvfp = n;
 
 static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,struct lexsyn *lsp,ub8 T0)
 {
@@ -820,9 +887,10 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   ub4 tkcnt=0;
   void *tkbas=nil;
   ub1 *tks=nil;
-  ub4 *tkbits=nil;
-  ub4 *tkfpos=nil;
-  struct mempart tkpart[3];
+  ub1 *atrs=nil;
+  ub8 *tkbits=nil;
+  ub2 *dfps=nil;
+  struct mempart tkpart[4];
 
   ub4 tkgrps[Tkgrp];
   ub1 grp;
@@ -856,21 +924,27 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   timeit(&T1,nil);
 
   ub1 c,prvc1,prvc2;
-  ub4 dn = 0;
-  ub4 n = 0;
+  ub4 dn = 0,bn = 0;
+  ub4 n = 0, prvfp = 0;
 
   ub4 idnplen1;
-  ub4 idcnt=0;
+
+  // idents
+  ub4 idcnt=0,id1cnt=0,id2cnt=0;
+
+  // kwd, bltin, dunder
+  ub4 kwcnt=0;
   ub4 bltcnt=0;
   ub4 duncnt=0;
+
+  // str lits
   ub4 slitcnt=0;
 
+  // flt lits
   ub4 flitcnt=0;
 
   nlitpos=0;
   flitpos=0;
-
-  ub4 kwcnt = 0;
 
   dentlvl=0;
   dentst[0] = 0;
@@ -887,6 +961,8 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   ub4 id=0;
   ub1 x1;
+  ub4 x4;
+  ub8 x8;
 
   ub4 hc=0;
 
@@ -968,17 +1044,21 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   if (idcnt) {
     showcnt("2ident / kwd",idcnt);
-    if (idnplen >= Idctl_2) ice(n,"ID literal pool exceeds max %u`B",Idctl_2);
+    if (idnplen >= Idpool) ice(n,"ID literal pool exceeds max %u`B",Idpool);
     info("idpool %u`B max len %u",idnplen,idhilen);
     idnplen += idhilen + 2;
     idnplen += 5 * (idcnt+1); // align + 0-term
   }
 
-
   if (tkcnt >= Tokencnt) serror(n,"token count %u exceeds limit %u",tkcnt,Tokencnt);
 
-  tkcnt += ilitcnt + flitcnt + slitcnt + slit0cnt + slit1cnt + slit2cnt + slit3cnt + slitxcnt;
-  tkcnt += idcnt + id2cnt + id1cnt;
+  ub4 bitcnt = ilitcnt + flitcnt + slitcnt + slit2cnt + slit3cnt + slitxcnt;
+  bitcnt += idcnt + id2cnt;
+
+  ub4 xcnt = slit0cnt + slit1cnt + id1cnt;
+
+  tkgrps[0] += bitcnt + xcnt;
+  tkcnt += bitcnt + xcnt;
 
   showcnt("2ident2",id2cnt);
   showcnt("2ident1",id1cnt);
@@ -996,17 +1076,21 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   if (globs.rununtil == 2) { infofln(FLN,"until lex pass 1"); return 0; }
 
-  tkpart[0].nel = tkpart[1].nel = tkpart[2].nel = tkcnt+Tkpad;
-  tkpart[0].siz = 4;
-  tkpart[1].siz = 4;
+  tkpart[1].nel = tkpart[2].nel = tkpart[3].nel = tkcnt+Tkpad;
+  tkpart[1].siz = 2;
   tkpart[2].siz = 1;
+  tkpart[3].siz = 1;
 
-  tkbas = allocset(tkpart,3,Mo_nofill,"lex tokens",nextcnt);
+  tkpart[0].siz = 8;
+  tkpart[0].nel = xcnt;
+
+  tkbas = allocset(tkpart,4,Mo_nofill,"lex tokens",nextcnt);
   tkbits = tkpart[0].ptr;
-  tkfpos = tkpart[1].ptr;
+  dfps = tkpart[1].ptr;
   tks = tkpart[2].ptr;
+  atrs = tkpart[3].ptr;
 
-  if (tkpart[0].ismmap == 0) memset(tkbits,0,tkcnt * 4);
+  if (tkpart[0].ismmap == 0) memset(atrs,0,tkcnt);
 
   nlittop = nlitpos; nlitpos = 0;
   if (nlittop) {
@@ -1025,8 +1109,13 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   if (idcnt) {
     mkidhash(uidcnt,idcnt);
+    idtablen = uidcnt * 2 + 1024;
+    idtab = alloc(idtablen,ub4,Mo_nofill,"lex id tab",nextcnt);
+  }
+  if (id2cnt) {
     mkid2tab();
   }
+  memset(id1tab,0xff,256);
 
   slitpos = 4;
 
@@ -1036,7 +1125,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   setsrcmfile(mf,lntab,lncnt,n);
 
   n = 0;
-  dn = 0;
+  dn = bn = 0;
   l = 0;
 
   fxp = 0;
@@ -1048,8 +1137,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   dentlvl=0;
   dentst[0] = 0;
 
-  idcnt = 0;
-  id2cnt = 0;
+  idcnt = id1cnt = id2cnt = 0;
 
   pass = 2;
 
@@ -1132,12 +1220,18 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   showcnt("token",dn);
 
   lsp->tkcnt = dn;
+  lsp->tbcnt = bn;
 
   lsp->toks = tks;
-  lsp->tkbits = tkbits;
-  lsp->tkpos = tkfpos;
+  lsp->bits = tkbits;
+  lsp->atrs = atrs;
+  lsp->dfps = dfps;
 
   lsp->idcnt = idcnt + id1cnt + id2cnt;
+  lsp->uidcnt = uidcnt;
+  lsp->uid1cnt = uid1cnt;
+  lsp->uid2cnt = uid2cnt;
+
   lsp->idnampool = idnampool;
 
   lsp->slitpool = slitpool;

@@ -61,8 +61,6 @@ static ub4 msgfile = Shsrc_syn;
 
 static bool dotrace = 0;
 
-struct synast g_synast;
-
 static cchar *tknam(enum Token tk,ub4 bits)
 {
   ub2 len;
@@ -174,12 +172,12 @@ enum Sermsg {
 
 static void ser(ub4 shfln,
   enum Token tk,
-  ub4 bits,
+  ub1 atr,
   ub4 fpos,
   ub4 ti,
   enum Nterm r,
   ub2 si,enum Sermsg sm,enum Symbol xps,ub1 ctl,
-  enum Production se)
+  enum Production ve)
 {
   const struct sentry *ep;
   const struct seinfo *eip;
@@ -190,8 +188,9 @@ static void ser(ub4 shfln,
   enum Token mtk;
   enum Ctl z,repc;
   const enum Ctl *cp;
-  enum Satrs atr=Sa_none;
+  enum Satrs satr=Sa_none;
   ub1 ns;
+  ub2 se;
   ub2 si0;
   cchar *msg="";
   cchar *xpmsg="";
@@ -244,27 +243,28 @@ static void ser(ub4 shfln,
     if (ctl) pos += mysnprintf(buf,pos,len," z=%02x",ctl);
   }
 
-  switch (se) {
+  switch (ve) {
   case Pcount:  break;
-  case Pendrep:   pos += mysnprintf(buf,pos,len,"end of rep at %s", tknam(tk,bits)); break;
+  case Pendrep:   pos += mysnprintf(buf,pos,len,"end of rep at %s", tknam(tk,atr)); break;
   default: break;
   }
 
-  if (se < Ptablen) {
+  if (ve < Ptablen) {
+    se = vprdmap[ve] & 0xff;
     ep = syntab + se;
 
     sp = ep->syms;
     cp = ep->ctls;
-    atr = syntabeas[se];
-    ns = atr & Sa_len;
+    satr = syntabeas[se];
+    ns = satr & Sa_len;
     s = sp[si];
 
     eip = stinfo + se;
-    svrb(fpos,"si %u ln %u",si,eip->lno);
+    sinfo(fpos,"si %u/%u ln %u",si,ns,eip->lno);
 
     pos += mysnprintf(buf,pos,len,"\n%s.%s`z representing '%s' at %s.%u\n",ntnam(r),prdnam(se,0),symnam(s),synfname,eip->lno);
 
-    if (atr & Sa_s0) {
+    if (satr & Sa_s0) {
       pos += mysnprintf(buf,pos,len,"%s ",symnam(eip->s0));
     }
 
@@ -294,23 +294,19 @@ static void ser(ub4 shfln,
     if (haverep) pos += mysnprintf(buf,pos,len,"as %s",ntnam(r));
   }
 
-  mysnprintf(buf,pos,len,", found '%s'\n",sm == Ser_eof ? "<eof>" : tknam(tk,bits));
+  mysnprintf(buf,pos,len,", found '%s'\n",sm == Ser_eof ? "<eof>" : tknam(tk,atr));
 
   serrorfln(shfln,fpos,buf,nil);
 }
 
-#ifdef Tidctl
- static ub4 *lvlids[Depth];
- static ub4 lvlidpos[Depth];
-#endif
-
 #ifdef Trace
-  #define sdia(lsp,ti,s,r,lvl,se,si,fmt,...) if (dotrace) diafln(FLN,lsp,ti,s,r,lvl,se,si,fmt,__VA_ARGS__)
+  #define sdia(lsp,ti,b,s,r,lvl,se,si,fmt,...) if (dotrace) diafln(FLN,lsp,ti,b,s,r,lvl,se,si,fmt,__VA_ARGS__)
 
-static void __attribute__ ((format (printf,9,10))) diafln(
+static void __attribute__ ((format (printf,10,11))) diafln(
   ub4 shfln,
   struct lexsyn *lsp,
   ub4 ti,
+  ub8 bits,
   enum Symbol s,
   enum Nterm r,
   ub2 lvl,
@@ -320,19 +316,21 @@ static void __attribute__ ((format (printf,9,10))) diafln(
 {
   static ub2 rowcnt;
   const enum Token * restrict tks = lsp->toks;
-  const ub4        * restrict tkbits = lsp->tkbits;
-  const ub4        * restrict tkpos = lsp->tkpos;
+  const ub1        * restrict atrs = lsp->atrs;
+  const ub8        * restrict tkbits = lsp->bits;
+  const ub2        * restrict dfps = lsp->dfps;
   enum Token tk = tks[ti];
-  ub4 bits      = tkbits[ti];
-  ub4 fpos      = tkpos[ti];
+  ub4 atr       = atrs[ti];
 
+  ub4 fpos = 0;
   ub4 len = 512;
   char buf[512];
   ub2 lno=0;
   ub2 pos,opos;
-  ub2 x2;
+  ub2 n,x2;
+  ub4 id;
   ub2 se=0;
-  enum Satrs atr=Sa_none;
+  enum Satrs satr=Sa_none;
   ub1 laid = 0xff;
   char c;
   cchar *pnam=nil;
@@ -341,6 +339,8 @@ static void __attribute__ ((format (printf,9,10))) diafln(
   const struct seinfo *eip=nil;
   const enum Symbol *sp;
 
+  for (n=0;n<ti;n++) fpos += dfps[n];
+
   if ( (rowcnt++ & 31) == 0) infofln(hi32,"%-19s lvl prod           se si sym            ti tk","");
 
   switch (ve) {
@@ -348,10 +348,10 @@ static void __attribute__ ((format (printf,9,10))) diafln(
   case Pendrep: c = '*';  break;
   default: c = ' ';
     if (ve < Ptablen) {
-      se = vprdmap[ve];
+      se = vprdmap[ve] & 0xff;
       ep = syntab + se; eip = stinfo + se;
       lno = eip->lno;
-      atr = syntabeas[se];
+      satr = syntabeas[se];
       pnam = prdnam(se,0);
     } else if (ve >= Plaid) {
       laid = ve - Plaid;
@@ -365,17 +365,17 @@ static void __attribute__ ((format (printf,9,10))) diafln(
 #ifdef Emitdetail
     opos = pos;
     switch (tk) {
-    case Tid:   if (bits & Idctl_1) buf[pos++] = bits & 0xff;
-                else if (bits & Idctl_2) {
-                  x2 = id2nam(bits & hi16);
-                  buf[pos++] = x2 & 0xff; buf[pos++] = x2 >> 8;
-                } else pos += mysnprintf(buf,pos,len,"%.7s",lsp->idnampool + bits);
+    case Tid:   id = bits;
+                if (atr == Idlen_n) id += lsp->uid1cnt + lsp->uid2cnt;
+                else if (atr == Idlen_2) id += lsp->uid1cnt;
+                else id = atr;
+                pos += mysnprintf(buf,pos,len,"%.7s",idnam(id));
                 break;
-    case Tnlit: if (bits & Litflt) {
-                  pos += mysnprintf(buf,pos,len,"%x flt",bits & ~Litflt);
+    case Tnlit: if (atr == Litflt) {
+                  pos += mysnprintf(buf,pos,len,"%lx flt",bits);
                 } else {
-                  if (bits & Litasc) pos += mysnprintf(buf,pos,len,"%.7s",lsp->nlitpool + (bits & ~Litasc));
-                  else pos += mysnprintf(buf,pos,len,"%u",bits);
+                  if (atr == Litasc) pos += mysnprintf(buf,pos,len,"%.7s",lsp->nlitpool + bits);
+                  else pos += mysnprintf(buf,pos,len,"%lu",bits);
                 }
                 break;
     case Tslit: if (bits < hi24) pos += mysnprintf(buf,pos,len,"%s",chprints(lsp->slitpool + bits,6));
@@ -386,7 +386,7 @@ static void __attribute__ ((format (printf,9,10))) diafln(
 #endif
 
   buf[pos++] = laid != 0xff ? '?' : ' ';
-  buf[pos++] = (atr & Sa_rep) ? '*' : ' ';
+  buf[pos++] = (satr & Sa_rep) ? '*' : ' ';
 
   if (pnam) pos += mysnprintf(buf,pos,len," %-10.8s`z ",pnam);
   pos += mysnprintf(buf,pos,len,"%3u ",lno);
@@ -409,24 +409,28 @@ static void __attribute__ ((format (printf,9,10))) diafln(
   va_end(ap);
 }
 #else
-  #define sdia(lsp,ti,s,r,lvl,se,si,fmt,...)
+  #define sdia(lsp,ti,b,s,r,lvl,se,si,fmt,...)
 #endif
 
 int syn(struct lexsyn *lsp,struct synast *sa)
 {
   const enum Token * restrict tks = lsp->toks;
-  const ub4 * restrict tkbits = lsp->tkbits;
-  const ub4 * restrict tkpos = lsp->tkpos;
+  const ub1 * restrict atrs = lsp->atrs;
+  const ub8 * restrict tkbits = lsp->bits;
+  const ub2 * restrict dfps = lsp->dfps;
+  ub4 *tkgrps = lsp->tkgrps;
 
   int rv = 0;
 
   ub4 tcnt = lsp->tkcnt;
+  ub4 bcnt = lsp->tbcnt;
 //  cchar *srcnam = lsp->
   ub1 grp;
 
   if (tcnt == 0) ice(0,0,"%s empty token list","srcnam");
 
   ub4 ti = 0; // token index
+  ub4 bi = 0;
   ub4 ni2,ni1,ni = 0; // node index
 
   ub2 lvl = 0,hilvl = 0;
@@ -437,14 +441,16 @@ int syn(struct lexsyn *lsp,struct synast *sa)
 
   // synthesized args aka attributes
   // token index or node index
-  ub4 args[Depth * Nodarg * 2];
-  ub4 *argp,*argq;
+  ub4 args[Depth * Nodarg];
+  ub4 *argp;
 
-  ub4 *ndargs;
+  ub8 vals[Depth * Nodarg];
+  ub8 *valp;
 
   ub2 n;
 
-  ub2 curscope = 0;
+  ub2 curscope = 0,hiblklvl = 0,scid = 0;
+  ub4 hiblkti = 0;
 
   // repetitions
   ub2 rep,repcnt=0,repcnts[Depth];
@@ -452,8 +458,10 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   ub4 replnids[Depth];
 
   ub4 fpos = 0;
-  ub4 bits = 0;
-  ub1 bits8;
+  ub8 bits = 0;
+  ub4 bits4;
+  ub4 idid;
+  ub1 bits1,bit;
 
   ub1 si = 0,len;
   ub2 nxndx;
@@ -464,12 +472,13 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   ub1 match=0;
 
   enum Token tk=0,tk1;
+  ub1 atr;
   const enum Symbol *sp=nil;
   enum Symbol s=0;
   enum Ctl z,repc,repcc,argc;
   enum Nterm nxr=0,r=startrule;
   ub2 se=0,nxse,x2;
-  ub4 ndti;
+  ub4 ndti=0;
   enum Production ve,ve1,ve2=0,nxve;
   enum Op op;
   ub1 ai;
@@ -487,36 +496,46 @@ int syn(struct lexsyn *lsp,struct synast *sa)
 
   const struct sentry *ep=nil;
 
-#ifdef Tidctl
-  ub4 idcnt = lsp->idcnt;
-  ub2 *iddefs = alloc(idcnt,ub2,0xff,"syn id defs");
-#endif
+  ub4 uidcnt = lsp->uidcnt;
+
+//  ub4 *idtab =
 
   ub4 estndcnt;
 
   ub4 ndcnts[Acount];
 
-  estndcnt = lsp->idcnt + lsp->nlitcnt + lsp->slitcnt;
+  memset(ndcnts,0,sizeof(ndcnts));
 
-  if (estndcnt == 0) ice(0,hi32,"no nodes for %u tokens",lsp->tkcnt);
+  ub2 uid1cnt = lsp->uid1cnt;
+  ub2 uid2cnt = lsp->uid2cnt;
+  ub4 idcnt = lsp->idcnt;
+
+  sa->uidcnt = uidcnt + uid1cnt + uid2cnt;
+  sa->idcnt = idcnt;
+
+  ub4 valcnt = idcnt + lsp->nlitcnt + lsp->slitcnt;
+
+  estndcnt = tkgrps[0] + tkgrps[1] + tkgrps[2]; // storables + ops + scope
+
+  if (estndcnt == 0) ice(0,hi32,"no nodes for %u tokens",tcnt);
 
   ub4 nodlim = estndcnt * 2;
 
-  ndargs = alloc(nodlim * 2 * 2,ub4,Mo_nofill,"node args",nextcnt);
+  ub4 *ndargs = alloc(nodlim * Nodarg,ub4,Mo_nofill,"node args",nextcnt);
 
-  memset(ndcnts,0,sizeof(ndcnts));
+  ub8 *ndvals = alloc(valcnt,ub8,Mo_nofill,"node vals",nextcnt);
 
   struct rnode *np,*np1,*np2,*nodes = alloc(nodlim,struct rnode,Mo_nofill,"nodes",nextcnt);
 
-  ub4 nid=0,n4;
+  ub4 nid=0,n4,nd;
 
   ub1 acnt;
-  ub2 argcnt,cnt,am;
-  ub4 napos=0,napos0;
+  ub2 argcnt,cnt,am,ac;
+  ub4 napos=0,nvpos=0,napos0;
 
   ub4 itercnt = 0,iterlim = tcnt * 8;
 
-  enum Astyp ndtyp;
+  enum Astyp ndtyp=0;
 
   memset(sis,0xff,Depth); // mark max depth
   lvl = 0;
@@ -526,9 +545,10 @@ int syn(struct lexsyn *lsp,struct synast *sa)
 
   ve = startve;
 
-  argp = args + lvl * Nodarg * 2;
-  argq = args + lvl * Nodarg * 2 + Nodarg;
-  memset(argp,0xff,Nodarg * 2 * 4);
+  argp = args + lvl * Nodarg;
+  valp = vals + lvl * Nodarg;
+  memset(args,0xff,sizeof args);
+  memset(vals,0xff,sizeof vals);
 
 // -------------------
 rulstart:
@@ -539,7 +559,7 @@ rulstart:
 // select production
   ai = syntabeas[ve];
 
-  sdia(lsp,ti,s,r,lvl,ve,si,"pos %u select ai %x",tkpos[ti],ai);
+  sdia(lsp,ti,0,s,r,lvl,ve,si,"pos %u select ai %x",fpos,ai);
 
   if (ai & Sa_s0) {
     ti++;
@@ -551,7 +571,7 @@ rulstart:
 
   cp = ep->ctls;
 
-  sdia(lsp,ti,*sp,r,lvl,ve,si,"se '%s' len %u",stinfo[se].src,ai & 0xf);
+  sdia(lsp,ti,0,*sp,r,lvl,ve,si,"se '%s' len %u",stinfo[se].src,ai & 0xf);
 
 // --- match production
   si = (ai >> 4) & 3;
@@ -576,6 +596,9 @@ nxtsym:
     if (++itercnt > iterlim) ice(0,fpos,"iter lim %u",iterlim);
 
     tk = tks[ti];
+    atr = atrs[ti];
+    fpos += dfps[ti];
+
     // vrb("tk %u.%s ti %u si %u/%u",tk,tknam(tk,0),ti,si,len);
 
     s = sp[si];
@@ -584,7 +607,7 @@ nxtsym:
     repc = z & Crepmask;
     argc = z & Cargmask; // 1-based
 
-    sdia(lsp,ti,s,r,lvl,ve,si,"z %x",z);
+    sdia(lsp,ti,0,s,r,lvl,ve,si,"z %x",z);
 
     if (s < Stoken) { // token = term
 
@@ -610,12 +633,12 @@ nxtsym:
             sec = lasp[lasn];
             if (sec & tkbit) break;
           }
-          sdia(lsp,ti,s,r,lvl,se,si,"laid %u %u/%u",laid,lasn,lan);
+          sdia(lsp,ti,0,s,r,lvl,nxve,si,"laid %u %u/%u",laid,lasn,lan);
           if (lasn < lan) {
-            sdia(lsp,ti,s,r,lvl,se,si,"la %u on tk %s",lasn,tknam(tk1,0));
+            sdia(lsp,ti,0,s,r,lvl,nxve,si,"la %u on tk %s",lasn,tknam(tk1,0));
             nxve = lasets[laid * Laset + lasn];
-          } else ser(FLN,tk,bits,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
-        } else ser(FLN,tk,bits,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
+          } else ser(FLN,tk,atr,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
+        } else ser(FLN,tk,atr,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
       } // la
 #endif
 
@@ -623,11 +646,14 @@ nxtsym:
 
 #if 1
         if (nxve == P0block) {
-          if (curscope + 1 < Depth) curscope++; else { fpos = tkpos[ti]; ice(0,fpos,"scope exceeds %u at %s",curscope,tknam(s,0)); } break;
+          scid++;
+          curscope++;
+          if (curscope >= Depth) serror(fpos,"scope exceeds %u at %s",curscope,tknam(s,0));
+          else if (curscope > hiblklvl) { hiblklvl = curscope; hiblkti = ti; }
         }
 #endif
 
-        sdia(lsp,ti,s,r,lvl,nxve,si,"push %u into %s ve %u scope %u",ve,ntnam(nxr),nxve,curscope);
+        sdia(lsp,ti,0,s,r,lvl,nxve,si,"push %u into %s ve %u scope %u",ve,ntnam(nxr),nxve,curscope);
 
         if (lvl + Skip >= Depth) ice(fpos,0,"exceeding %u nesting depth",lvl);
 
@@ -640,9 +666,9 @@ nxtsym:
         r = nxr;
         si = 0;
 
-        argp = args + lvl * Nodarg * 2;
-        argq = args + lvl * Nodarg * 2 + Nodarg;
-        memset(argp,0xff,Nodarg * 2 * 4);
+        argp = args + lvl * Nodarg;
+        valp = vals + lvl * Nodarg;
+        memset(argp,0xff,Nodarg * 4);
 
         if (tk <= T0grp && tk > T99_kwd) { // merged kwd
           argp[0] = ti;
@@ -651,53 +677,62 @@ nxtsym:
         goto rulstart;
 
       } else if (nxve < P1dirtok) { // direct match as arg -> nonterm
-        sdia(lsp,ti,s,r,lvl,se,si,"direct match, node %2u",ni);
+        sdia(lsp,ti,0,s,r,lvl,nxve,si,"direct match, node %2u",ni);
 
         argc--;
+        bits = tkbits[bi++];
         switch (tk) {
-          case Tid:   bits = tkbits[ti]; ndtyp = Aid;
+          case Tid:   ndtyp = Aid;
                       ndti = ndcnts[ndtyp]++;
+                      idid = bits & hi32;
+                      if (atr == Idlen_2) idid += uid1cnt;
+                      else if (atr == Idlen_n) idid += uid1cnt + uid2cnt;
+                      else idid = atr;
+                      valp[argc] = idid | ((ub8)fpos << 32);
                       break;
-          case Tnlit: bits = tkbits[ti];
-                      if (bits & Litflt) ndtyp = Aflit;
-                      else if (bits < Atymsk) { // small ilit
+          case Tnlit: if (bits & Litflt) {
+                        ndtyp = Aflit;
+                        ndti = ndcnts[ndtyp]++;
+                      } else if (bits < Atymsk) { // small ilit
                         ndti = bits;
                         ndtyp = Ailits;
                         break;
                       } else ndtyp = Ailit;
                       ndti = ndcnts[ndtyp]++;
+                      valp[argc] = bits;
                       break;
-          case Tslit: ndtyp = Aslit; ndti = ndcnts[ndtyp]++; break;
-          default: ndtyp = 0; ndti = 0; break;
+          case Tslit: ndtyp = Aslit; ndti = ndcnts[ndtyp]++;
+                      valp[argc] = bits | ((ub8)fpos << 32);
+                      break;
+          default:    break;
         }
         argp[argc] = ndti | (ndtyp << Atybit);
-        info("arg %u %x t %u ve %u si %u",argc,argp[argc],ndtyp,ve,si);
 
-        argq[argc] = ti;
+        info("arg %u %x t %u ve %u si %u",argc,argp[argc],ndtyp,ve,si);
 
         if (repc != Crep0n) si++;
         ti++;
         continue;
 
       } else if (nxve < Plaid) { // idem, no arg
-        sdia(lsp,ti,s,r,lvl,se,si,"direct match, node %2u arg",ni);
+        sdia(lsp,ti,0,s,r,lvl,nxve,si,"direct match, node %2u arg",ni);
 
         if (repc != Crep0n) si++;
         ti++;
 
       } else if (nxve == Pendrep) { // rep of none
-        sdia(lsp,ti,s,r,lvl,se,si,"rep of none %u",nxr);
+        sdia(lsp,ti,0,s,r,lvl,nxve,si,"rep of none %u",nxr);
         si++;
 
       } else { // nonmatch nterm
-        sdia(lsp,ti,s,r,lvl,se,si,"no match repc %x",repc);
+        sdia(lsp,ti,0,s,r,lvl,nxve,si,"no match repc %x",repc);
         if (repc == Crep01 || repc == Crep0n) si++; // common case
         else {
           repcc = repc >> Crepshift;
           if (repcc) {
-            sdia(lsp,ti,s,r,lvl,se,si,"skip grp %u",repcc);
+            sdia(lsp,ti,0,s,r,lvl,nxve,si,"skip grp %u",repcc);
             si += repcc;
-          } else ser(FLN,tk,bits,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
+          } else ser(FLN,tk,atr,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
         }
       }
 
@@ -709,31 +744,13 @@ nxtsym:
       match = (tkmrgtab[tk] & mrgbit);
 
     } else {
-      ser(FLN,tk,bits,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
+      ser(FLN,tk,atr,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
     }
 
     if (s < Stoken || s >= Smrgset) { // term
 
       if (match) {
-        sdia(lsp,ti,s,r,lvl,ve,si,"match term %u len %u",z,len);
-
-#ifdef Tidctl
-        idc = z & Cidmask; // handle typedef-id
-
-        switch (idc) {
-        case Ciddef: id = tkbits[ti];
-                     iddefs[id] = curscope;
-                     break;
-
-        case Cidref: id = tkbits[ti];
-                     if (iddefs[id] <= curscope) {
-                       tk = Ttypdefnam;
-                     }
-                     break;
-
-        default: break;
-        }
-#endif
+        sdia(lsp,ti,0,s,r,lvl,ve,si,"match term %u len %u",z,len);
 
         if (argc) {
           argc--;
@@ -741,10 +758,15 @@ nxtsym:
           if (argp[argc] == hi32) {  // store first - common occurence as ti : others are at ti+n
 
         switch (tk) {
-          case Tid:   bits = tkbits[ti]; ndtyp = Aid;
+          case Tid:   bits = tkbits[bi++]; ndtyp = Aid;
+                      idid = bits & hi32;
+                      if (atr == Idlen_2) idid += uid1cnt;
+                      else if (atr == Idlen_n) idid += uid1cnt + uid2cnt;
+                      else idid = atr;
                       ndti = ndcnts[ndtyp]++;
+                      valp[argc] = idid | ((ub8)fpos << 32);
                       break;
-          case Tnlit: bits = tkbits[ti];
+          case Tnlit: bits = tkbits[bi++];
                       if (bits & Litflt) ndtyp = Aflit;
                       else if (bits < Atymsk) { // small ilit
                         ndti = bits;
@@ -752,23 +774,26 @@ nxtsym:
                         break;
                       } else ndtyp = Ailit;
                       ndti = ndcnts[ndtyp]++;
+                      valp[argc] = bits | ((ub8)fpos << 32);
                       break;
-          case Tslit: ndtyp = Aslit; ndti = ndcnts[ndtyp]++; break;
+          case Tslit: bits = tkbits[bi++];
+                      ndtyp = Aslit; ndti = ndcnts[ndtyp]++;
+                      valp[argc] = bits | ((ub8)fpos << 32);
+                      break;
 
           case Tast: argp[argc] = (Omul << Aopbit) | (Aop << Atybit); break;
-          case Tpm: bits8 = tkbits[ti]; op = bits8 == '+' ? Opls : Omin; argp[argc] = (op << Aopbit) | (Aop << Atybit); break;
-          case Top: bits8 = tkbits[ti];
-                    op = (enum Op)bits8;
+          case Tpm: bits1 = atr; op = bits1 == '+' ? Opls : Omin; argp[argc] = (op << Aopbit) | (Aop << Atybit); break;
+          case Top: bits1 = atr;
+                    op = (enum Op)bits1;
                     argp[argc] = (op << Aopbit) | (Aop << Atybit);
                     break;
-          default:  ndtyp = 0; ndti = 0; break; // todo rep
+          default:  ndtyp = Acount; break; // todo rep
         }
 
-            if (tk >= Tid && tk < Tslit) {
+            if (ndtyp <= Aleaf) {
               if (ndti >= Acntlim) serror(fpos,"node count exceeds limit %u",Acntlim);
               info("arg %u t %u",argc,ndtyp);
               argp[argc] = ndti | (ndtyp << Atybit);
-              argq[argc] = ti;
             }
             // info("arg %u %x ve %u si %u",argc,argp[argc],ve,si);
 
@@ -784,16 +809,16 @@ nxtsym:
       } else { // nonmatch term
 
 //        info("tk %u.%s ti %u s %u.%s si %u/%u",tk,tknam(tk,0),ti,s,symnam(s),si,len);
-        sdia(lsp,ti,s,r,lvl,se,si,"nonmatch term %s z %x",tknam(tk,0),z);
+        sdia(lsp,ti,0,s,r,lvl,se,si,"nonmatch term %s z %x",tknam(tk,0),z);
 
         if (repc == Crep01 || repc == Crep0n) si++; // common case
         else if (repc == Creplp) { reppm = 0; goto endsym; } // end rep
         else {
           repcc = repc >> Crepshift;
           if (repcc) {
-            sdia(lsp,ti,s,r,lvl,se,si,"skip grp %u",repcc);
+            sdia(lsp,ti,0,s,r,lvl,se,si,"skip grp %u",repcc);
             si += repcc;
-          } else ser(FLN,tk,bits,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
+          } else ser(FLN,tk,atr,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
 
        } // generic case
 
@@ -808,27 +833,29 @@ nxtsym:
 endsym:
 // ------------
 
-  napos0 = napos;
+//  napos0 = napos;
+  bit = 1;
   am = 0;
 
-  if (argp[0] != hi32) { ndargs[napos++] = argp[0]; am = 1; }
-  if (argq[0] != hi32) { ndargs[napos++] = argq[0]; }
-  if (argp[1] != hi32) { ndargs[napos++] = argp[1]; am |= 2; }
-  if (argq[1] != hi32) { ndargs[napos++] = argq[1]; }
-  if (argp[2] != hi32) { ndargs[napos++] = argp[2]; am |= 4; }
-  if (argq[2] != hi32) { ndargs[napos++] = argq[2]; }
-  if (argp[3] != hi32) { ndargs[napos++] = argp[3]; am |= 8; }
-  if (argq[3] != hi32) { ndargs[napos++] = argq[3]; }
+  for (ac = 0; ac < Nodarg; ac++) {
+    nd = argp[ac];
+    if (nd != hi32) {
+      ndargs[napos++] = nd;
+      if (nd <= (Aval << Atybit)) ndvals[nvpos++] = valp[ac];
+      am |= bit;
+    }
+    bit <<= 1;
+  }
 
   if (am) {
 
-    sdia(lsp,ti,s,r,lvl,se,si,"node %2u",ni);
+    sdia(lsp,ti,0,s,r,lvl,se,si,"node %2u",ni);
 
     if (ni >= nodlim) serror(fpos,"exceeded %u nodes",nodlim);
 
     np = nodes + ni;
 
-    np->ai = napos0;
+//    np->ai = napos0;
 
     np->amask = am;
 
@@ -837,7 +864,7 @@ endsym:
 #if 1
     np->blklvl = curscope;
     if (ve == P0block) {
-      if (curscope) curscope--; else ice(hi32,tkpos[ti],"scope below zero at %s",tknam(tk,0));
+      if (curscope) curscope--; else ice(hi32,fpos,"scope below zero at %s",tknam(tk,0));
     }
 #endif
 
@@ -863,13 +890,17 @@ endsym:
     }
 
     tk = tks[ti];
+    atr = atrs[ti];
+    fpos += dfps[ti];
+
     nxndx = r * Stbl_tklen + tk;
     nxve = prdsel[nxndx];
     if (nxve < Ptablen) {
       ve = nxve;
       ai = syntabeas[nxve];
-      nxse = vprdmap[nxve];
-      sdia(lsp,ti,s,Ncount,lvl,nxse,si,"repeat on %u.%u",ve,se);
+      x2 = vprdmap[nxve];
+      nxse = x2 & 0xff;
+      sdia(lsp,ti,0,s,Ncount,lvl,nxse,si,"repeat on %u.%u",ve,se);
       si = (ai >> 4) & 3;
       if (ai & Sa_s0) ti++;
       isrep = ai & Sa_rep;
@@ -877,12 +908,12 @@ endsym:
       goto nxtsym;
 
     } else { // nonmatch at end of rep -> always ok end
-      sdia(lsp,ti,s,r,lvl,ve,si,"end rep on %u tk %s %u",se,tknam(tk,0),nxse);
+      sdia(lsp,ti,0,s,r,lvl,ve,si,"end rep on %u tk %s %u",se,tknam(tk,0),nxve);
 
       if (repcnt > 2) { // create rep node
         np = nodes + ni;
 
-        np->ai = napos;
+//        np->ai = napos;
         np->amask = 0;
         ndargs[napos++] = repcnt;
 
@@ -914,8 +945,8 @@ endsym:
   }
 
   if (lvl == 0) {
-//    icefln(FLN,hi32,tkpos[ti],"pop at lvl 0 after %u` tokens and %u` nodes",ti,ni);
-    sinfo(tkpos[ti],"pop at lvl 0 after %u` tokens and %u` nodes",ti,ni);
+//    icefln(FLN,hi32,fpos,"pop at lvl 0 after %u` tokens and %u` nodes",ti,ni);
+    sinfo(fpos,"pop at lvl 0 after %u` tokens and %u` nodes",ti,ni);
     goto eof;
   }
 
@@ -966,7 +997,7 @@ endsym:
     si++;
   }
 
-  sdia(lsp,ti,s,r,lvl,se,si,"pop into %u lvl %u",se,lvl);
+  sdia(lsp,ti,0,s,r,lvl,se,si,"pop into %u lvl %u",se,lvl);
 //  info("se %u si %u s %u",se,si,sp[si]);
 
   reppm = isrep;
@@ -980,29 +1011,36 @@ endsym:
   eof:
 // ---
 
-  info("ti %u bits %x",ti,tkbits[ti]);
+  info("ti %u/%u bits %u/%u",ti,tcnt,bi,bcnt);
   showcnt("3node",ni);
   showcnt("3arg",napos);
 
+  if (ti != tcnt) { ser(FLN,tk,0,fpos,ti,r,si,Ser_eof_nostart,T99_count,0,0); return 1; }
+
   if (ni == 0) return 0;
+
+  info("max scope depth %u",hiblklvl);
+  showcnt("3scope blocks",scid);
 
   hilvl = 0;
   while (hilvl < Depth && sis[hilvl] != 0xff) hilvl++;
 
-  info("max lvl %u cur %u",hilvl,lvl);
+  info("max parser stack lvl %u",hilvl);
+  if (lvl) ice(hi32,fpos,"syn eof at lvl %u",lvl);
 
 //  if (r != startrule) { ser(FLN,tk,bits,fpos,ti,r,si,Ser_eof_nostart,T99_count,0,0); return 1; }
 
   if (globs.rununtil < 4) { info("until %u",globs.rununtil); return 1; }
 
-// ?  struct synast *sa = &g_synast;
-
-  nodes[ni].ni = (Acount << Atybit);
+  nodes[ni].ni = ((ub4)Acount << Atybit);
 
   sa->nodes = nodes;
   sa->ndcnt = ni+1;
   sa->args = ndargs;
   sa->argcnt = napos;
+  sa->nscid = scid;
+  sa->hiblklvl = hiblklvl;
+
   memcpy(sa->ndcnts,ndcnts,sizeof(ndcnts));
 
   return rv;
@@ -1025,23 +1063,24 @@ int inisyn(void)
   ub4 ilen = (ub4)sizeof(struct seinfo);
   ub4 len = poolsizes;
 
-  info("pool %u`B",poolsizes);
-  info("stab1 %3u * %2u = %3u`B",Ptablen,slen,(ub4)sizeof(syntab));
-  info("stab2 %3u * %2u = %3u`B",Ptablen,ilen,(ub4)sizeof(stinfo));
+  if (globs.resusg) {
+    info("pool %u`B",poolsizes);
+    info("stab1 %3u * %2u = %3u`B",Ptablen,slen,(ub4)sizeof(syntab));
+    info("stab2 %3u * %2u = %3u`B",Ptablen,ilen,(ub4)sizeof(stinfo));
 
 #ifdef Lacnt
-  info("la tab %u`B",Latabsizes);
-  len += Latabsizes;
+    info("la tab %u`B",Latabsizes);
+    len += Latabsizes;
 #endif
-  len += sizeof(syntab);
-  len += sizeof(stinfo);
+    len += sizeof(syntab);
+    len += sizeof(stinfo);
 
-  info("stpos %3u * %2u = %3u`B",Ncount,Stbl_tklen,(ub4)sizeof(prdsel));
+    info("stpos %3u * %2u = %3u`B",Ncount,Stbl_tklen,(ub4)sizeof(prdsel));
 
-  len += sizeof(prdsel);
+    len += sizeof(prdsel);
 
-  info("total          = %3u`B",len);
-
+    info("total          = %3u`B",len);
+  }
   for (i = 0; i < Ncount * T99_count; i++) {
     prd = prdsel[i];
     if (prd > Pcount) ice(0,hi32,"invalid symbol table entry %u at %u.%u",prd,i / T99_count,i % T99_count);

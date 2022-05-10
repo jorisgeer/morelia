@@ -31,10 +31,6 @@
 
 #define Skip 8
 
-#ifdef __clang__
- #pragma clang diagnostic ignored "-Wduplicate-enum"
-#endif
-
 /* symbol controls
  * b0-2 node args 0=none
  * b3-5 group skips 0=none 7=+rep 6=*
