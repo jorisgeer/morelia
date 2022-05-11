@@ -78,15 +78,10 @@ set
   pm +-
   st *
   eq =
-#  op /%@<>&|^!
+  op @%&^|
   o1 /
-  o2 %
-  o3 @
   o4 <
   o5 >
-  o6 &
-  o7 |
-  o8 ^
   o9 !
   EOF \00
  +an _a-zA-Z+nm
@@ -124,14 +119,14 @@ action
 # ----------------------
 ilit
 1 ilitcnt++;
-2 if (litrep == 0) { tkbits[dn] = u4v; u4v = 0; }
-2 else {
-2   tkbits[dn] = Litasc | nlitpos;
+2 if (litbin) { if (u4v < Ilit4) atrs[dn] = u4v; else { atrs[dn] = Ilit4; bits[bn++] = u4v; }
+2 } else {
+2   bits[bn++] = nlitpos; atrs[dn] = Ilita;
 2   memcpy(nlitpool+nlitpos,sp+N,n-N); nlitpool[nlitpos++] = 0;
 2   nlitpos += n-N;
-2   litrep = 0;
+2   litbin = 1;
 2 }
-1 if (n-N > 3) nlitpos += n-N;
+1 nlitpos += n-N;
 #  info("ilit %u",u4v);
 
 # ----------------------
@@ -139,22 +134,22 @@ ilit
 # ----------------------
 flit
 1 flitcnt++;
-2 if (fxp + fdp < E16max) fxp += fdp; else litrep = Litasc;
-2 if (litrep == 0) {
-2   tkbits[dn] = Litflt | litfpi | (fxs << 22) | (fxp << 21) | u4v;
-2   u4v = 0;
+2 if (litbin && fxp + fdp < E16max) fxp += fdp; else litbin = 0;
+2 if (litbin) {
+2   atrs[dn] = Flit8;
+2   bits[bn++] = (fxs << 22) | (fxp << 21) | u4v;
 2 } else {
-2   tkbits[dn] = Litflt | Litasc | litfpi | nlitpos;
+2   bits[bn++] = nlitpos; atrs[dn] = Flita;
 2   memcpy(nlitpool+nlitpos,sp+N,n-N); nlitpool[nlitpos++] = 0;
-2   nlitpos += n-N; litfpi=0; litrep = 0;
+2   nlitpos += n-N; litfpi=0; litbin = 1;
 2 }
 2 fxp=0;fxs=0;fdp=0;
-1 if (n-N > 3) nlitpos += n-N;
+1 nlitpos += n-N;
 #  info("flit %u",u4v);
 
 doflitfr
-2 if (u4v < D32max) u4v = u4v * 10 + c - '0'; else litrep = Litasc;
-2 if (fdp < E16max) fdp++; else litrep = Litasc;
+2 if (litbin && u4v < D32max) u4v = u4v * 10 + c - '0'; else litbin = 0;
+2 if (litbin && fdp < E16max) fdp++; else litbin = 0;
 
 doslit0
 2 slitx=slitpos; slitpool[slitx++] = c;
@@ -209,12 +204,12 @@ slit
 2 switch(len) {
 2 case 1: x1 = slitpool[slitpos]; if (x1 < Slit_len) { atrs[dn] = x1; break; } Fallthrough
 2 case 2:
-2 case 3: tkbits[bn] = *(ub4 *)(slitpool + slitpos);
+2 case 3: bits[bn] = *(ub4 *)(slitpool + slitpos);
 2         atrs[dn] = len | Slit_len;
 2         break;
 2 default:
 2   id = slitgetadd(slitpool,slitx);
-2   tkbits[bn++] = id;
+2   bits[bn++] = id;
 2   atrs[dn] = min(len,Slit_len - 1) | Slit_len;
 2 }
 .
@@ -247,15 +242,17 @@ id2
 1   id2chr[prvc2] = 2;
 2   tk = Tid;
 2   id = id2getadd(prvc1,prvc2);
-2   tkbits[bn++] = id;
+2   bits[bn++] = id;
 2   atrs[dn] = Idlen_2;
   }
 2 tks[dn] = tk; setfpos(dn,n)
 2 dn++;
 
 id
-  len = idxpos - idnampos;
-  hc = hashalstr(idnampool+idnampos,len,Hshseed);
+1 len = n - N;
+1 hc = hashalstr(sp+N,len,Hshseed);
+2 len = idxpos - idnampos;
+2 hc = hashalstr(idnampool+idnampos,len,Hshseed);
 1 if (len > idhilen) idhilen = len;
 1 idcnt++;
 1 idnplen += len;
@@ -265,10 +262,10 @@ id
 2 else {
 2   tk = Tid;
 2   blt = lookupblt(len,hc);
-2   if (blt < B99_count) { tkbits[bn++] = blt; atrs[dn] = Idctl_blt; bltcnt++; }
+2   if (blt < B99_count) { bits[bn++] = blt; atrs[dn] = Idctl_blt; bltcnt++; }
 2   else {
 2     x4 = idgetadd(idxpos,hc);
-2     tkbits[bn++] = x4;
+2     bits[bn++] = x4;
 2     atrs[dn] = Idlen_n;
 2   }
 2 }
@@ -314,7 +311,7 @@ dodent
 # opening { [ (
 # ----------------------
 dobo
-  if (bolvl + 1 >= Depth) lxerror(l,0,`L,c,Lxe_count); // ser("exceeding nesting depth %u",Depth);
+  if (bolvl + 1 >= Depth) lxerror(l,0,`L,c,Lxe_count);
   bolvls[bolvl] = n;
   bolvlc[bolvl] = c;
   bolvl++;
@@ -323,25 +320,25 @@ dobo
 # closing ]
 # ----------------------
 #dosc
-#  if (bolvl == 0) lxerror(l,0,`L,c,Lxe_count); // ser("pos %u missing opening '['",n);
+#  if (bolvl == 0) lxerror(l,0,`L,c,Lxe_count);
 #  bolvl--;
-#  if (bolvlc[bolvl] != '[') lxerror(l,0,`L,c,Lxe_count); // ser("pos %u unmatched opening '[' at pos %u lvl %u ln %u",n,bolvls[bolvl],bolvl,L);
+#  if (bolvlc[bolvl] != '[') lxerror(l,0,`L,c,Lxe_count);
 
 # ----------------------
 # closing )
 # ----------------------
 dorc
-  if (bolvl == 0) lxerror(l,0,`L,c,Lxe_count); // ser("pos %u missing opening '('",n);
+  if (bolvl == 0) lxerror(l,0,`L,c,Lxe_count);
   bolvl--;
-  if (bolvlc[bolvl] != '(') lxerror(l,0,`L,c,Lxe_count); // ser("pos %u unmatched opening '(' at pos %u lvl %u ln %u",n,bolvls[bolvl],bolvl,L);
+  if (bolvlc[bolvl] != '(') lxerror(l,0,`L,c,Lxe_count);
 
 # ----------------------
 # closing }
 # ----------------------
 docc
-  if (bolvl == 0) lxerror(l,0,`L,c,Lxe_count); // ser("pos %u missing opening '('",n);
+  if (bolvl == 0) lxerror(l,0,`L,c,Lxe_count);
   bolvl--;
-  if (bolvlc[bolvl] != '{') lxerror(l,0,`L,c,Lxe_count); // ser("pos %u unmatched opening '(' at pos %u lvl %u ln %u",n,bolvls[bolvl],bolvl,L);
+  if (bolvlc[bolvl] != '{') lxerror(l,0,`L,c,Lxe_count);
 
 INIT
   bolvl = 0;
@@ -383,7 +380,8 @@ root
              2. u4v = c - '0';
 
 # identifier
-  af id1 3.id .prvc1 = c;
+  af id1 3.id .prvc1 = c;\
+              1. N=n;
 
 # string literal
   qq slit0 . .Q=c;\
@@ -415,17 +413,11 @@ root
 # operators
 #  ** . exp
 #  *= . mulas
+  op .   . 2. atrs[dn] = c;
   * . ast 2. atrs[dn] = Lomul;
-
-#  op oper . 2. atrs[dn] = c;
   / oper . 2. atrs[dn] = Lodiv;
-  % .    . 2. atrs[dn] = c;
-  @ .    . 2. atrs[dn] = c;
   < oper . 2. atrs[dn] = Lolt;
   > oper . 2. atrs[dn] = Logt;
-  & oper . 2. atrs[dn] = c;
-  | oper . 2. atrs[dn] = Loor;
-  ^ .    . 2. atrs[dn] = c;
   ! .    . 2. atrs[dn] = c;
 
 # pm= . aas.
@@ -480,12 +472,12 @@ id1
   ot -root 2.id id1
 
 id2
-  an id . .idxpos = idnampos + 3;\
-          .idnampool[idnampos] = prvc1; idnampool[idnampos+1] = prvc2; idnampool[idnampos+2] = c;
+  an id . 2.idxpos = idnampos + 3;\
+          2.idnampool[idnampos] = prvc1; idnampool[idnampos+1] = prvc2; idnampool[idnampos+2] = c;
   ot -root . id2
 
 id
-  an . . .idnampool[idxpos++] = c;
+  an . . 2.idnampool[idxpos++] = c;
 #  nl root . donl\
 #            id
   ot -root . id
@@ -498,17 +490,19 @@ id
   oo ilito
   xx ilitx
   _
+  0
   nm filit . 2. u4v = c - '0'; ## decimal with leading zero
   . flitfr . 2. fdp=0; ## 0.
   j root 2.nlit 2. litfpi = 1;\
                flit
-  ot -root 2.nlit ilit
+  ot -root 2.nlit 2. atrs[dn] = 0;\
+                  1. ilit1cnt++;
 
 # ---------------------
 # float or int literal
 # ---------------------
 .filit
-  nm . . 2. if (u4v < D32max) u4v = u4v * 10 + c - '0'; else litrep = Litasc;
+  nm . . 2. if (litbin && u4v < D32max) u4v = u4v * 10 + c - '0'; else litbin = 0;
   _
   . flitfr . 2. fdp=0;
   ee flitxp0 .   2. fxs = 0; fxp = 0;
@@ -531,7 +525,7 @@ id
 # float literal exp
 # ---------------------
 .flitxp0
-  nm flitxp . 2. if (fxp < E16max) fxp = fxp * 10 + c - '0'; else litrep = Litasc;
+  nm flitxp . 2. if (litbin && fxp < E16max) fxp = fxp * 10 + c - '0'; else litbin = 0;
   pm flitxp . 2. fxs = (c == '-');
   _
   j root 2.nlit 2. litfpi = 1;\
@@ -540,7 +534,7 @@ id
   ot -root 2.nlit flit
 
 .flitxp
-  nm . . 2. if (fxp < E16max) fxp = fxp * 10 + c - '0'; else litrep = Litasc;
+  nm . . 2. if (litbin && fxp < E16max) fxp = fxp * 10 + c - '0'; else litbin = 0;
   _
   j root 2.nlit 2. litfpi = 1;\
                flit
@@ -551,8 +545,8 @@ id
 # int literal binary
 # ---------------------
 .ilitb
-  0 . . 2. if (u4v < B32max) u4v <<= 1; else litrep = Litasc;
-  1 . . 2. if (u4v < B32max) u4v = u4v << 1 | 1; else litrep = Litasc;
+  0 . . 2. if (litbin && u4v < B32max) u4v <<= 1; else litbin = 0;
+  1 . . 2. if (litbin && u4v < B32max) u4v = u4v << 1 | 1; else litbin = 0;
   _
   ot -root 2.nlit ilit
 
@@ -562,7 +556,7 @@ id
 .ilito
   8 Err
   9 Err
-  nm . . 2.u4v = u4v << 3 | (c - '0');
+  nm . . 2. if (litbin && u4v < D32max) u4v = u4v << 3 | (c - '0'); else litbin = 0;
   _
   ot -root 2.nlit ilit
 
@@ -570,8 +564,8 @@ id
 # int literal hex
 # ---------------------
 .ilitx
-  nm . . 2. if (u4v < X32max) u4v = u4v << 4 | (c - '0');
-  hx . . 2. if (u4v < X32max) u4v = u4v << 4 | ( (c | 0x20) + 10 - 'a');
+  nm . . 2. if (litbin && u4v < X32max) u4v = u4v << 4 | (c - '0'); else litbin = 0;
+  hx . . 2. if (litbin && u4v < X32max) u4v = u4v << 4 | ( (c | 0x20) + 10 - 'a'); else litbin = 0;
   _
   ot -root 2.nlit ilit
 

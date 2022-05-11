@@ -66,8 +66,7 @@ struct lexsyn {
 
 #define Slit_len 0x80
 
-#define Litflt 0x85
-#define Litasc 0x86
+enum Nlitatr { Ilit4=0x80,Flit8,Ilita,Flita,Flit0 };
 
 enum Packed8 Lop { Lolit,Lorelor,Loreland,Lone,Loeq,Loshl,Loshr,Lonot,Loxor,Loneg,Loor,Loand,Loumin,Loupls,Lomin,Lopls,Lomul,Lodiv,Lomod,Loas,Lolt,Logt,Lole,Loge,Loqst,Locol,Locom,Locnt };
 

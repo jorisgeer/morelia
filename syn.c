@@ -364,18 +364,18 @@ static void __attribute__ ((format (printf,10,11))) diafln(
 
 #ifdef Emitdetail
     opos = pos;
-    switch (tk) {
+    switch ((ub1)tk) {
     case Tid:   id = bits;
                 if (atr == Idlen_n) id += lsp->uid1cnt + lsp->uid2cnt;
                 else if (atr == Idlen_2) id += lsp->uid1cnt;
                 else id = atr;
                 pos += mysnprintf(buf,pos,len,"%.7s",idnam(id));
                 break;
-    case Tnlit: if (atr == Litflt) {
-                  pos += mysnprintf(buf,pos,len,"%lx flt",bits);
-                } else {
-                  if (atr == Litasc) pos += mysnprintf(buf,pos,len,"%.7s",lsp->nlitpool + bits);
-                  else pos += mysnprintf(buf,pos,len,"%lu",bits);
+    case Tnlit: if (atr < 10) buf[pos++] = atr + '0';
+                else if (atr < Ilit4) pos += mysnprintf(buf,pos,len,"%u",atr);
+                else if (atr == Flit8) pos += mysnprintf(buf,pos,len,"%lx flt",bits);
+                else {
+                  pos += mysnprintf(buf,pos,len,"%.7s",lsp->nlitpool + bits);
                 }
                 break;
     case Tslit: if (bits < hi24) pos += mysnprintf(buf,pos,len,"%s",chprints(lsp->slitpool + bits,6));
@@ -680,30 +680,43 @@ nxtsym:
         sdia(lsp,ti,0,s,r,lvl,nxve,si,"direct match, node %2u",ni);
 
         argc--;
-        bits = tkbits[bi++];
         switch (tk) {
-          case Tid:   ndtyp = Aid;
-                      ndti = ndcnts[ndtyp]++;
-                      idid = bits & hi32;
-                      if (atr == Idlen_2) idid += uid1cnt;
-                      else if (atr == Idlen_n) idid += uid1cnt + uid2cnt;
-                      else idid = atr;
-                      valp[argc] = idid | ((ub8)fpos << 32);
-                      break;
-          case Tnlit: if (bits & Litflt) {
-                        ndtyp = Aflit;
-                        ndti = ndcnts[ndtyp]++;
-                      } else if (bits < Atymsk) { // small ilit
-                        ndti = bits;
-                        ndtyp = Ailits;
-                        break;
-                      } else ndtyp = Ailit;
-                      ndti = ndcnts[ndtyp]++;
-                      valp[argc] = bits;
-                      break;
-          case Tslit: ndtyp = Aslit; ndti = ndcnts[ndtyp]++;
-                      valp[argc] = bits | ((ub8)fpos << 32);
-                      break;
+
+          case Tid:
+            ndtyp = Aid;
+            ndti = ndcnts[ndtyp]++;
+            idid = bits & hi32;
+            if (atr < Idlen_2) idid = atr;
+            else {
+              idid = tkbits[bi++];
+              if (atr == Idlen_2) idid += uid1cnt;
+              else idid += uid1cnt + uid2cnt;
+            }
+            valp[argc] = idid | ((ub8)fpos << 32);
+            break;
+
+          case Tnlit:
+            if (atr < Ilit4) { ndtyp = Ailits; ndti = atr; }
+            else {
+              bits = tkbits[bi++];
+              if (atr == Ilit4) {
+                if (bits < Atymsk) { ndtyp = Ailits; ndti = bits; }
+                else ndtyp = Ailit;
+              } else if (atr == Flit8) ndtyp = Aflit;
+              else ice(0,0,"ascii lits %u todo",atr);
+            }
+            if (ndtyp != Ailits) {
+              ndti = ndcnts[ndtyp]++;
+              valp[argc] = bits;
+            }
+            break;
+
+          case Tslit:
+            bits = tkbits[bi++];
+            ndtyp = Aslit; ndti = ndcnts[ndtyp]++;
+            valp[argc] = bits | ((ub8)fpos << 32);
+            break;
+
           default:    break;
         }
         argp[argc] = ndti | (ndtyp << Atybit);
@@ -766,16 +779,23 @@ nxtsym:
                       ndti = ndcnts[ndtyp]++;
                       valp[argc] = idid | ((ub8)fpos << 32);
                       break;
-          case Tnlit: bits = tkbits[bi++];
-                      if (bits & Litflt) ndtyp = Aflit;
-                      else if (bits < Atymsk) { // small ilit
-                        ndti = bits;
-                        ndtyp = Ailits;
-                        break;
-                      } else ndtyp = Ailit;
-                      ndti = ndcnts[ndtyp]++;
-                      valp[argc] = bits | ((ub8)fpos << 32);
-                      break;
+
+          case Tnlit:
+            if (atr < Ilit4) { ndtyp = Ailits; ndti = atr; }
+            else {
+              bits = tkbits[bi++];
+              if (atr == Ilit4) {
+                if (bits < Atymsk) { ndtyp = Ailits; ndti = bits; }
+                else ndtyp = Ailit;
+              } else if (atr == Flit8) ndtyp = Aflit;
+              else ice(0,0,"ascii lits %u todo",atr);
+            }
+            if (ndtyp != Ailits) {
+              ndti = ndcnts[ndtyp]++;
+              valp[argc] = bits;
+            }
+            break;
+
           case Tslit: bits = tkbits[bi++];
                       ndtyp = Aslit; ndti = ndcnts[ndtyp]++;
                       valp[argc] = bits | ((ub8)fpos << 32);
