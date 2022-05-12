@@ -28,7 +28,7 @@ enum Bop { Badd,Bmul };
 enum Role { Lhs,Rhs };
 
 struct ilit { // term ilit
-  ub4 val;
+  ub8 val;
 };
 
 struct id { // term id
@@ -109,24 +109,26 @@ struct ast {
   ub4 len;
   ub4 root;
 
-  struct stmtlst *stmtls;
   struct id *ids;
   struct ilit *ilits;
-  struct uexp *uexps;
+
   struct pexp *pexps;
+  struct uexp *uexps;
   struct bexp *bexps;
   struct aexp *aexps;
-
-  struct rexp *rexps;
 
   struct asgnst *asgnsts;
 
   struct blk *blks;
 
+  struct witer *witers;
+
   struct fndef *fndefs;
   struct param *prms;
 
-  struct witer *witers;
+  struct rexp *rexps;
+  struct prmlst *prmls;
+  struct stmtlst *stmtls;
 
   ub4 nid;
   ub4 uidcnt;
@@ -141,3 +143,6 @@ struct ast {
 
   ub1 blkbit;
 };
+
+extern void runast(struct ast *ap,bool emit);
+extern cchar *atynam(enum Astyp t);

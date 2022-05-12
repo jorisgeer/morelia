@@ -2349,30 +2349,35 @@ static cchar *strupper(cchar *p)
   return buf;
 }
 
-static void printsets(struct bufile *f,bool def)
+static void printsets(struct bufile *f,ub1 mode)
 {
   ub2 s,c,bit;
   enum Ctype t;
   cchar *nam;
 
+  if (mode == 2) myfputs(f,"/*\n",3);
+
   for (s = 0; s < nset; s++) {
     if (setcase[s]) continue;
     nam = strupper(setnams + s * Snam);
-    if (def) {
+    if (mode) {
       bit = setbits[s];
-      myfprintf(f,"#define %s %-2u // ",nam,bit);
+      if (mode == 1) myfprintf(f,"#define %s %-2u // ",nam,bit);
+      else if (mode == 2) myfprintf(f," %-3s %-2u ",nam,bit);
       if (setmuls[s]) myfputc(f,'+');
+      myfputs(f," ' ",3);
       for (c = 0; c < 128; c++) {
         if (setmuls[s]) {
           if ( (cctab[c] & bit) == 0) continue;
         } else if (ctab[c] != bit) continue;
         t = Ctab[c];
-        if (t && t != Cnl && t != Cws) myfputc(f,c);
-        else myfprintf(f,"%s",chprint(c));
+        if (t && c >= ' ') { myfputc(f,c); if (t != Calpha && t != Cnum) myfputc(f,' '); }
+        else myfprintf(f,"%s ",chprint(c));
       }
-      myfputc(f,'\n');
+      myfputs(f,"'\n",2);
     } else myfprintf(f,"#undef %s\n",nam);
   }
+  if (mode == 2) myfputs(f,"*/\n",3);
 }
 
 static void printtrans(struct bufile *f)
@@ -2535,9 +2540,10 @@ static int wrfile(void)
 #define Buflen 4096
   static char buf[Buflen];
   ub4 blen = Buflen;
-  ub2 bpos = 0;
+  ub2 bpos = 0,bpos2=0;
 
   char buf2[256];
+  ub4 blen2 = 256;
 
   int rv;
 
@@ -2928,24 +2934,30 @@ static int wrfile(void)
       myfprintf(&lhfp," };\n\n");
     }
 
-    printsets(&lhfp,1);
+    printsets(&lhfp,2);
 
     myfprintf(&lhfp,"#define x  %u\n\nstatic unsigned char ctab[256] = {\n  ",nsets);
-    bpos = 0;
+    bpos = bpos2 = 0;
     for (c = 0; c < 256; c++) {
-      if (c) buf[bpos++] = ',';
-      if (c && (c & 0xf) == 0)  bpos += mysnprintf(buf,bpos,blen,"\n  ");
-      if (ctab[c] == nsets) { buf[bpos++] = 'x'; buf[bpos++] = ' '; }
+      if (c) { buf[bpos++] = ','; buf2[bpos2++] = ','; }
+      if (c && (c & 0xf) == 0) {
+        bpos += mysnprintf(buf,bpos,blen,"  // %.*s\n  ",bpos2,buf2);
+        bpos2 = 0;
+      }
+      if (ctab[c] == nsets) { buf[bpos++] = ' '; buf[bpos++] = 'x'; buf2[bpos2++] = ' '; buf2[bpos2++] = 'x'; }
       else {
         bit = ctab[c];
         set = setmaps[bit];
         nam = setnams + set * Snam;
-        if (nam[2]) bpos += mysnprintf(buf,bpos,blen,"%u",set);
-        else { buf[bpos++] = upcase(nam[0]); buf[bpos++] = upcase(nam[1]); }
+        bpos += mysnprintf(buf,bpos,blen,"%2u",set);
+        if (nam[2]) {
+          bpos2 += mysnprintf(buf2,bpos2,blen2,"%2u",set);
+        } else {
+         buf2[bpos2++] = nam[0]; buf2[bpos2++] = nam[1];
+        }
       }
     }
     myfprintf(&lhfp,"%s\n};\n#undef x\n",buf);
-    printsets(&lhfp,0);
 
     if (cctab_use) {
       myfprintf(&lhfp,"\nstatic unsigned char utab[256] = {\n  ");
@@ -3317,7 +3329,7 @@ static int wrfile(void)
             if (pass2) {
               bpos += mysnprintf(buf,bpos,blen,"tks[dn] = T%.*s; setfpos(dn,n) ",toklens[tk],toks[tk]);
             }
-            bpos += mysnprintf(buf,bpos,blen,"dn++;\n  ");
+            bpos += mysnprintf(buf,bpos,blen,"\n  dn++;\n  ");
           }
         } else if (tp->tkhid < nltok && addtrace && pass1) {
           bpos += mysnprintf(buf,bpos,blen,"tracetk(\"%3u %.*s\");\n  ",lno,toklens[tp->tkhid],toks[tp->tkhid]);
@@ -3384,9 +3396,9 @@ static int wrfile(void)
         bpos = wrcode(buf,bpos,blen,tp->codlen,tp->code,lno);
       }
       if (tk < nltok) {
-        if (pass2) bpos += mysnprintf(buf,bpos,blen,"  tks[dn] = T%.*s; setfpos(dn,n)",toklens[tk],toks[tk]);
+        if (pass2) bpos += mysnprintf(buf,bpos,blen,"\n  tks[dn] = T%.*s; setfpos(dn,n)",toklens[tk],toks[tk]);
         else if (addtrace) bpos += mysnprintf(buf,bpos,blen,"tracetk(\"%3u %.*s\");\n",lno,toklens[tk],toks[tk]);
-        bpos += mysnprintf(buf,bpos,blen,"dn++;\n");
+        bpos += mysnprintf(buf,bpos,blen,"\n  dn++;\n");
       }
       if (tp->actstate == 0) bpos += mysnprintf(buf,bpos,blen,"  goto lx%c_%.*s%s;",passc,stlens[st],states[st],pass1 && st == st0 && addtrace ? "_1" : "");
 
@@ -3402,7 +3414,7 @@ static int wrfile(void)
       if (pass2) {
         if (addtrace) bpos += mysnprintf(buf,bpos,blen,"tracetk2(%u,tktab%c_%s[t]);\n",lno,passc,st0nam);
       }
-      bpos += mysnprintf(buf,bpos,blen," dn++; goto lx%c_%s%s;\n",passc,st0nam,pass1 && addtrace ? "_1" : "");
+      bpos += mysnprintf(buf,bpos,blen,"\n  dn++; goto lx%c_%s%s;\n",passc,st0nam,pass1 && addtrace ? "_1" : "");
     }
 
     myfprintf(&lfp,"  %.*s\n",bpos,buf);
@@ -3429,10 +3441,10 @@ static int wrfile(void)
 enum Cmdopt { Co_pass1=1,Co_pass2,Co_trace,Co_omit,Co_nowrite,Co_nodif,Co_until,Co_Winfo };
 
 static struct cmdopt cmdopts[] = {
-  { "",'1',      Co_pass1,  "",         "generate pass 1" },
-  { "",'2',      Co_pass2,  "",         "generate pass 2" },
-  { "",'n',      Co_nowrite,"",         "do not write" },
-  { "",'u',      Co_nodif,  "",         "unconditional write" },
+  { "",'1',      Co_pass1,  nil,        "generate pass 1" },
+  { "",'2',      Co_pass2,  nil,        "generate pass 2" },
+  { "",'n',      Co_nowrite,nil,        "do not write" },
+  { "",'u',      Co_nodif,  nil,        "unconditional write" },
   { "omit", ' ', Co_omit,   "%ecode,trans,token", "omit section" },
   { "until", ' ',Co_until,  "%espec,gen,out", "process until <pass>" },
   { "trace",'t', Co_trace,  "?%ulevel", "enable tracing" },

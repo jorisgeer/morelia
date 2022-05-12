@@ -36,13 +36,16 @@ static ub4 msgfile = Shsrc_main;
 #include "lexsyn.h"
 
 #include "syndef.h"
+
+#include "astyp.h"
 #include "synast.h"
 
 #include "util.h"
 
 struct globs globs;
 
-enum Cmdopt { Co_until=1,Co_prog,Co_emit,Co_include,Co_Werror,Co_Wwarn,Co_Winfo,Co_Wtrace };
+enum Cmdopt { Co_until=1,Co_prog,Co_emit,Co_runast,Co_include,
+  Co_Werror,Co_Wwarn,Co_Winfo,Co_Wtrace };
 
 static ub2 msgopt = Msg_shcoord | Msg_fno | Msg_lno | Msg_col; // | Msg_tim
 
@@ -152,6 +155,7 @@ static int domod(void)
 static struct cmdopt cmdopts[] = {
   { "",        'c', Co_prog,    "prog", "program to run as string" },
   { "emit",    ' ', Co_emit,    "%elex,syn,ast,sem","intermediate pass output to emit" },
+  { "runast",  ' ', Co_runast,  nil,    "run aka evaluate ast" },
   { "until",   ' ', Co_until,   "%einit,file,lex1,lex,syn,ast", "process until <pass>" },
 
   { "include", 'I', Co_include, "dir",  "add directory to include search path" },
@@ -261,6 +265,7 @@ static int cmdline(int argc, char *argv[])
 
       case Co_prog:   cmdprog = coval.sval; cmdprglen = coval.vlen; break;
       case Co_until:  globs.rununtil = coval.uval; break;
+      case Co_runast: globs.runast = 1; break;
       case Co_emit:   globs.emit |= (1U << coval.uval); break;
       case Co_Werror: diaset(Error,(cchar *)coval.sval); break;
       case Co_Wwarn:  diaset(Warn,(cchar *)coval.sval); break;

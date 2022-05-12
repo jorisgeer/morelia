@@ -806,7 +806,7 @@ static void doemit(struct lexsyn *lsp,cchar *name)
   ub4 tkcnt = lsp->tkcnt;
   const ub1 *slitpool = lsp->slitpool;
 
-  bool emit = (globs.emit & 1);
+  bool emit = (globs.emit & Lexpas);
   enum Token tk=0;
   ub1 atr;
   ub4 dn,bn=0;

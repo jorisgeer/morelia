@@ -42,9 +42,10 @@ static ub4 msgfile = Shsrc_syn;
 #include "syndef.h"
 #include "syntab.i"
 
+#include "astyp.h"
 #include "synast.h"
 
-#include "exp.h"
+// #include "exp.h"
 
 #ifdef __clang__
  #pragma clang diagnostic ignored "-Wenum-conversion"
@@ -891,7 +892,6 @@ endsym:
     np->lvl = lvl;
     nid = ni;
     ni++;
-//    ndcnts[ve]++;
   }
 
   // info("reppm %u isrep %u ve %u",reppm,isrep,ve);

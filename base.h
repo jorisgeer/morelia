@@ -158,8 +158,10 @@ extern ub2 expndx(ub2 x,ub2 lim);
 
 extern int inibase(void);
 
-enum Shsrcfile { Shsrc_ast,Shsrc_base,Shsrc_dia,Shsrc_mem,Shsrc_msg,Shsrc_genlex,Shsrc_gensyn,
+enum Shsrcfile { Shsrc_ast,Shsrc_base,Shsrc_dia,Shsrc_eval,Shsrc_mem,Shsrc_msg,Shsrc_genlex,Shsrc_gensyn,
   Shsrc_lex,Shsrc_lex1,Shsrc_lex2,Shsrc_os,Shsrc_syn,Shsrc_main,Shsrc_time,Shsrc_util,Shsrc_count};
+
+enum Pass { Lexpas=1,Synpas=2,Astpas=4 };
 
 // program-wide global vars go here
 struct globs {
@@ -171,6 +173,8 @@ struct globs {
   ub1 rununtil;
   bool errwarn;
   bool resusg;
+
+  bool runast;
   ub2 emit,log;
 
   ub2 msglvl;

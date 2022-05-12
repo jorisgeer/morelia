@@ -789,16 +789,16 @@ static void show_license(void)
 static ub2 hilongopt;
 
 static struct cmdopt genopts[] = {
- { "help",    'h', Co_help,    "",         "Show usage and quit" },
- { "license", 'L', Co_license, "",         "Show license and quit" },
- { "",        '?', Co_help,    "",         "" },
- { "dryrun",  'n', Co_dry,     "",         "Do not execute" },
- { "quiet",   'q', Co_quiet,   "",         "Suppress informal output" },
- { "silent",  ' ', Co_quiet,   "",         "Suppress informal output" },
- { "rusage",  'r', Co_resusg,  "",         "Show resource usage" },
- { "version", 'V', Co_version, "",         "Show version and quit" },
+ { "help",    'h', Co_help,    nil,         "Show usage and quit" },
+ { "license", 'L', Co_license, nil,         "Show license and quit" },
+ { "",        '?', Co_help,    nil,         "Show help and quit" },
+ { "dryrun",  'n', Co_dry,     nil,         "Do not execute" },
+ { "quiet",   'q', Co_quiet,   nil,         "Suppress informal output" },
+ { "silent",  ' ', Co_quiet,   nil,         "Suppress informal output" },
+ { "rusage",  'r', Co_resusg,  nil,         "Show resource usage" },
+ { "version", 'V', Co_version, nil,         "Show version and quit" },
  { "verbose", 'v', Co_verbose, "?%ulevel", "Verbose level" },
- { "",        'e', Co_errwarn, "",         "Treat warnings as error" },
+ { "",        'e', Co_errwarn, nil,         "Treat warnings as error" },
  { nil,0,0,nil,nil}
 };
 
@@ -838,7 +838,7 @@ void usage(struct cmdopt *opts)
 
   while (op->opt) op++;
   pos = mysnprintf(buf,0,len,"\n%s\n\nUsage: %s [options]",op->desc,globs.prgnam);
-  if (op->arg) pos += mysnprintf(buf,pos,len," %s  (%u arg%.*s)\n\nOptions:\n",
+  if (op->arg && op->arg[0]) pos += mysnprintf(buf,pos,len," %s  (%u arg%.*s)\n\nOptions:\n",
     op->arg,op->sname,op->sname,"s");
 
   op = opts;

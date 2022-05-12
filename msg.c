@@ -149,6 +149,7 @@ static const char *shflnames[Shsrc_count] = {
   [Shsrc_ast]    = "ast",
   [Shsrc_base]   = "base",
   [Shsrc_dia]    = "dia",
+  [Shsrc_eval]   = "eval",
   [Shsrc_mem]    = "mem",
   [Shsrc_msg]    = "msg",
   [Shsrc_lex]    = "lex",
