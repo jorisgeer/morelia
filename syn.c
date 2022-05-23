@@ -62,6 +62,8 @@ static ub4 msgfile = Shsrc_syn;
 
 static bool dotrace = 0;
 
+static ub4 dirprds[256]; // todo
+
 static cchar *tknam(enum Token tk,ub4 bits)
 {
   ub2 len;
@@ -677,7 +679,7 @@ nxtsym:
 
         goto rulstart;
 
-      } else if (nxve < P1dirtok) { // direct match as arg -> nonterm
+      } else if (nxve < P1dirtok) { // direct match as arg or kwd -> nonterm
         sdia(lsp,ti,0,s,r,lvl,nxve,si,"direct match, node %2u",ni);
 
         argc--;
@@ -718,7 +720,11 @@ nxtsym:
             valp[argc] = bits | ((ub8)fpos << 32);
             break;
 
-          default:    break;
+          default:
+            ndtyp = Akwd;
+            if (T99_count < t99_count) ndti = dirprds[atr];
+            else ndti = dirprds[tk];
+            break;
         }
         argp[argc] = ndti | (ndtyp << Atybit);
 
@@ -924,7 +930,7 @@ endsym:
       si = (ai >> 4) & 3;
       if (ai & Sa_s0) ti++;
       isrep = ai & Sa_rep;
-      memset(argp,0xff,Nodarg * 2 * 4);
+      memset(argp,0xff,Nodarg * ub4siz);
       goto nxtsym;
 
     } else { // nonmatch at end of rep -> always ok end

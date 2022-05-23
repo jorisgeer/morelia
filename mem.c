@@ -265,7 +265,7 @@ void achkfree(void)
 void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter)
 {
   ub8 n8,x8;
-  ub4 n,nn,nm,dn,totalmb,align;
+  ub4 n,nn,nm,totalmb,align;
   ub1 *p;
   struct ainfo *ai;
   ub2 allan,mod;
@@ -344,12 +344,10 @@ void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter
 void afree_fln(ub4 fln,void *p,const char *desc,ub2 counter)
 {
   struct ainfo *ai;
-  ub4 elsiz,ofs;
+  ub4 elsiz;
   ub4 n;
   ub8 x8;
   ub2 allan,freean,anchor,mod;
-  ub1 x;
-  ub1 *bp = (ub1 *)p;
   bool ismmap;
 
   if (desc == nil) desc = "(nil)";

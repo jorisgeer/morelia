@@ -23,7 +23,6 @@
 #ifdef Gensyn
 
 #include <stdarg.h>
-#include <stddef.h>
 #include <string.h>
 
 #include "base.h"
@@ -232,7 +231,7 @@ static cchar *tknam2(enum Token tk,bool hr)
   return buf;
 }
 
-static bool tkdefarg(enum Token t) { return (t > T99_kwd && t <= T0grp); }
+static bool tkdefarg(enum Token t) { return (t >= T99_kwd && t <= T0grp); }
 
 static cchar *tknam(enum Token tk) { return  tknam2(tk,0); }
 
@@ -976,7 +975,7 @@ static ub1 dir2prdnams[Dirprd * Dirprdnam];
 static ub1 dir1prdnlens[Dirprd];
 static ub1 dir2prdnlens[Dirprd];
 
-static ub2 addirtok(enum Token tk,ub2 rul,ub2 alt)
+static ub2 addirtok(enum Token tk,ub2 rul,ub2 alt,enum Ctl arg)
 {
   ub2 ndx = rul * Nalt + alt;
   ub2 d = dirtoks[ndx];
@@ -988,14 +987,14 @@ static ub2 addirtok(enum Token tk,ub2 rul,ub2 alt)
   ub2 len;
   ub4 lnx = rules[rul].lno|Lno;
 
-  if (tkdefarg(tk)) { // to be stored as arg
+  if (tkdefarg(tk) || arg) { // to be stored as arg
     dtr = dir1tkruls;
     dt = dir1tks;
-    if (d >= Dirprd) {
+    if (d == hi16) {
       if (ndirprd1 >= Dirprd) serror2(lnx,rul,tk,"exceeding %u dir tokens",Dirprd);
-      d = ndirprd1++; // overrule nonstore
+      d = ndirprd1++;
       sinfo2(lnx,rul,tk,"add Dirtok %u alt %u tk %u",d,alt,tk);
-    }
+    } else sinfo2(lnx,rul,tk,"Dirtok %u alt %u tk %u",d,alt,tk);
     np = dir1prdnams + d * Dirprdnam;
     nlp = dir1prdnlens;
   } else {
@@ -1005,8 +1004,8 @@ static ub2 addirtok(enum Token tk,ub2 rul,ub2 alt)
     if (d == hi16) {
       if (ndirprd2 >= Dirprd) serror2(lnx,rul,tk,"exceeding %u dir tokens",Dirprd);
       d = ndirprd2++;
-      svrb2(lnx,rul,tk,"add dirtok %u alt %u",d,alt);
-    } else if (d >= Dirprd) d -= ofs;
+      sinfo2(lnx,rul,tk,"add dirtok %u alt %u",d,alt);
+    }  else sinfo2(lnx,rul,tk,"dirtok %u alt %u",d,alt);
     if (d >= Dirprd) serror2(lnx,rul,tk,"exceeding %u dir tokens",Dirprd);
     np = dir2prdnams + d * Dirprdnam;
     nlp = dir2prdnlens;
@@ -1040,7 +1039,7 @@ static int mktables(void)
   struct sentry *ep;
   ub2 se=0,ve=0,ose,nse;
   enum Token tk;
-  enum Ctl repc,idc;
+  enum Ctl repc,idc,arg;
   enum Satrs atr;
   ub1 z,*cp;
   ub2 x2,*stp = prdsel;
@@ -1126,6 +1125,7 @@ static int mktables(void)
       z = cp[si];
       repc = z & Crepmask;
       idc = z & Cidmask;
+      arg = z & Cargmask;
 
       sinc = 1;
       isrep = 0;
@@ -1204,18 +1204,18 @@ static int mktables(void)
         ta = tra >> 8;
         ose = stp[tk];
 
-        if (tnc == 1) { // dirtok
+        if (tnc == 1) { // dirtok todo isrep
           rxp = rules + tr;
           xsp = rxp->second0;
           svrb2(lnx,tr,tk,"i %u rule %s",i,rp->name);
           sec = xsp[tk];
-          nse = addirtok(tk,tr,ta);
+          nse = addirtok(tk,tr,ta,arg);
           svrb2(lnx,r,tk,"i %u nse %u sec %s",i,nse,printsec(sec,buf,blen));
           dircnt++;
 
         } else if (ena_benambi && tnc == 2 && trn > 2 && ose == Invpos) { // dirtok + benamb
           rxp = rules + tr;
-          nse = addirtok(tk,tr,ta);
+          nse = addirtok(tk,tr,ta,arg);
           if (laseq + 1 >= Lacnt) serror2(lnx,r,tk,"exceeding %u lookahead sets",Lacnt);
           laid = laseq++;
           stp[tk] = ose = laid + Laid;
@@ -1366,7 +1366,8 @@ static int mktables(void)
   lacnt = laseq;
 
   ndirprd = ndirprd1 + ndirprd2;
-  showcnt("3dirprd",ndirprd);
+  showcnt("3Dirprd",ndirprd1);
+  showcnt("3dirprd",ndirprd2);
 
   // patch tbl len now we know it
   for (r = 0; r < rulcnt; r++) {
@@ -2516,7 +2517,7 @@ static void wrprd(struct bufile *fp,struct bufile *dfp)
     n = rp->prdnlen[a];
     if (n) len = mysnprintf(pnam,0,Prdnam,"%.*s",n,rp->prdnam[a]);
     else {
-      len = mysnprintf(pnam,0,Prdnam,"%s_%u",rp->name,a);
+      len = mysnprintf(pnam,0,Prdnam,"%s",rp->name);
       if (rp->altcnt > 1) len += mysnprintf(pnam,len,Prdnam,"_%u",a);
     }
     if (ep->nve > 1) len += mysnprintf(pnam,len,Prdnam,"_%u",si);
@@ -2995,7 +2996,7 @@ static int wrfile(void)
         } else if (x2 >= vtablen + ndirprd1) { // directs 2
           x2 -= vtablen + ndirprd1;
           tk2 = dir2tks[x2];
-          if (tk != tk2) serror2(lnx,r,tk,"dirtok %s for %u",tknam(tk2),x2);
+          if (tk != tk2) serror2(lnx,r,tk,"dirtok %s for %u %u %u",tknam(tk2),x2,tk,tk2);
           x1 = rp->firstrn[tk2];
           pos1 = rultablin(buf1,pos1,256,dir2prdnams + x2 * Dirprdnam,prdnamwid,comma);
           pos2 += mysnprintf(buf2,pos2,256,"   %u.%*s",x1,prdnamwid2,tknam(tk));

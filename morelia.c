@@ -33,14 +33,14 @@ static ub4 msgfile = Shsrc_main;
 
 #include "dia.h"
 
+#include "util.h"
+
 #include "lexsyn.h"
 
 #include "syndef.h"
 
 #include "astyp.h"
 #include "synast.h"
-
-#include "util.h"
 
 struct globs globs;
 

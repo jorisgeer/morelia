@@ -37,15 +37,25 @@ ub4 sat32(ub8 x,ub8 y)
   return (ub4)min(xy,hi32);
 }
 
-ub4 nxpwr2(ub4 x,ub1 *bit)
+ub4 nxpwr2(ub4 x,ub1 *pbit)
 {
-  ub4 pwr2 = 1;
+  ub2 bit = 0;
 
   if (x > 0x80000000) return hi32;
 
-  while (pwr2 < x) pwr2 <<= 1;
-  *bit = pwr2;
-  return x;
+  while ( (1U << bit) < x) bit++;
+  *pbit = bit;
+  return 1U << bit;
+}
+
+ub2 nxbit(ub4 x)
+{
+  ub2 bit = 0;
+
+  if (x > 0x80000000) return 32;
+
+  while ( (1U << bit) < x) bit++;
+  return bit;
 }
 
 ub1 msb(ub4 x)

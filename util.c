@@ -744,7 +744,7 @@ static void show_version(bool full)
   pos += mysnprintf(buf,pos,len,"gcc %u.%u",__GNUC__,__GNUC_MINOR__);
 
   #ifdef __CET__
-    pos += mysnprintf(buf,pos,len," +cfp");
+    pos += mysnprintf(buf,pos,len," +cfp %u",__CET__);
   #endif
 
 #else

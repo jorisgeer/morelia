@@ -35,11 +35,14 @@ typedef unsigned short ub2;
 typedef unsigned int   ub4;
 typedef unsigned long  ub8;
 
+typedef signed char sb1;
 typedef short sb2;
 typedef int   sb4;
 typedef long  sb8;
 
 typedef const char cchar;
+
+#define ub4siz 4
 
 #define Version_maj 0
 #define Version_min 0
@@ -149,6 +152,7 @@ extern ub1 atox1(ub1 c);
 extern ub4 sat32(ub8 x,ub8 y);
 
 extern ub4 nxpwr2(ub4 x,ub1 *bit);
+extern ub2 nxbit(ub4 x);
 
 extern ub1 msb(ub4 x);
 extern ub2 msb8(ub8 x);
@@ -158,8 +162,11 @@ extern ub2 expndx(ub2 x,ub2 lim);
 
 extern int inibase(void);
 
-enum Shsrcfile { Shsrc_ast,Shsrc_base,Shsrc_dia,Shsrc_eval,Shsrc_mem,Shsrc_msg,Shsrc_genlex,Shsrc_gensyn,
-  Shsrc_lex,Shsrc_lex1,Shsrc_lex2,Shsrc_os,Shsrc_syn,Shsrc_main,Shsrc_time,Shsrc_util,Shsrc_count};
+enum Shsrcfile { Shsrc_ast,Shsrc_base,Shsrc_dia,Shsrc_eval,Shsrc_mem,Shsrc_msg,
+  Shsrc_genir,Shsrc_genlex,Shsrc_gensyn,
+  Shsrc_lex,Shsrc_lex1,Shsrc_lex2,Shsrc_os,Shsrc_syn,Shsrc_main,Shsrc_time,Shsrc_util,
+  Shsrc_vm,Shsrc_vmrun,
+  Shsrc_count};
 
 enum Pass { Lexpas=1,Synpas=2,Astpas=4 };
 

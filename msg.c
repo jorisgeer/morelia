@@ -34,8 +34,6 @@
 
 #include "base.h"
 
-#include "chr.h"
-
 #include "mem.h"
 
 #include "fmt.h"
@@ -155,13 +153,16 @@ static const char *shflnames[Shsrc_count] = {
   [Shsrc_lex]    = "lex",
   [Shsrc_lex1]   = "lextb1",
   [Shsrc_lex2]   = "lextb2",
+  [Shsrc_genir]  = "genir",
   [Shsrc_genlex] = "genlex",
   [Shsrc_gensyn] = "gensyn",
   [Shsrc_os]     = "os",
   [Shsrc_syn]    = "syn",
   [Shsrc_main]   = "morelia",
   [Shsrc_time]   = "time",
-  [Shsrc_util]   = "util"
+  [Shsrc_util]   = "util",
+  [Shsrc_vm]     = "vm",
+  [Shsrc_vmrun]  = "vmrun"
 };
 
 static void msg_wrfln(ub4 fln)
@@ -669,10 +670,11 @@ ub4 limit_gt_fln(ub4 x,ub4 lim,ub4 arg,const char *sx,const char *slim,const cha
 void showcntfln(ub4 fln,cchar *nam,ub4 cnt)
 {
   ub2 n = 0;
+  char c;
 
-  if (cnt == 0 || nam == nil) return;
+  if (cnt == 0 || nam == nil || (c = *nam) == 0) return;
 
-  if (Ctab[*nam] == Cnum) n = (ub2)(*nam++ - '0');
+  if (c >= '0' && c <= '9') n = (ub2)(*nam++ - '0');
   if (*nam == '#') infofln(fln,"%*u` %s",n,cnt,nam+1);
   else infofln(fln,"%*u` %s%.*s",n,cnt,nam,cnt != 1,"s");
 }
@@ -680,10 +682,11 @@ void showcntfln(ub4 fln,cchar *nam,ub4 cnt)
 void showsizfln(ub4 fln,cchar *nam,ub4 siz)
 {
   ub2 n = 0;
+  char c;
 
-  if (siz == 0 || nam == nil) return;
+  if (siz == 0 || nam == nil || (c = *nam) == 0) return;
 
-  if (Ctab[*nam] == Cnum) n = (ub2)(*nam++ - '0');
+  if (c >= '0' && c <= '9') n = (ub2)(*nam++ - '0');
   infofln(fln,"%s %*u`",nam,n,siz);
 }
 
