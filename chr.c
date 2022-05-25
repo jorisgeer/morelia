@@ -140,7 +140,11 @@ const enum Ctype Ctab[256] = {
 
 static ub2 dochprint(ub1 c,ub1 *p)
 {
-  if (Ctab[c] == 0) {
+  if (c == 0) {
+    p[0] = '\\';
+    p[1] = '0';
+    return 2;
+  } else if (Ctab[c] == 0) {
     p[0] = '0';
     p[1] = 'x';
     p[2] = hextab[c >> 4];
@@ -182,6 +186,22 @@ const ub1 *chprints(const ub1 *s,ub2 n)
   static ub1 buf[256];
 
   while ( (c=*s++) && pos < len ) {
+    if (Ctab[c] && c >= ' ') buf[pos++] = c;
+    else pos += dochprint(c,buf+pos);
+  }
+  buf[pos] = 0;
+  return buf;
+}
+
+const ub1 *chprintn(const ub1 *s,ub2 n)
+{
+  ub4 pos=0,len = min(252,n);
+  ub1 c;
+  const ub1 *q;
+  static ub1 buf[256];
+
+  while (pos < len ) {
+    c = *s++;
     if (Ctab[c] && c >= ' ') buf[pos++] = c;
     else pos += dochprint(c,buf+pos);
   }

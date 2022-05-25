@@ -335,10 +335,13 @@ static void dotracetok2(ub2 ln,ub2 tk,ub4 n,ub4 fln)
 // string lits
 static ub4 slit0cnt,slit1cnt,slit2cnt,slit3cnt,slitxcnt,slitlimcnt;
 static ub4 slitpos,slittop;
+static ub4 slitucnt;
 
 static ub4 *slithsh;
 static ub4 slithshlen,slithshmask,slithshcnt;
 static ub1 slithshbit;
+
+static ub8 *slitids;
 
 // int lits
 static ub4 ilitcnt,ilit1cnt;
@@ -394,21 +397,24 @@ static ub4 idcheck(ub4 nam,ub2 len,ub4 v)
   ub4 np,id;
 
   if (x == 0) { // slot free
-    idhsh[v] = np = idnampos;
+    id = uidcnt++;
+    if (id >= idtablen) ice(hi32,"id '%.*s' exceeds %u",len,idnampool+nam,id);
+    idhsh[v] = id;
+    np = idnampos;
 //    vrb("add '%s'",idnampool+idnampos);
     idnampos = align4(nam + 1);
     idhshcnt++;
     if (len > idnmax) idnmax = len;
-    id = uidcnt++;
-    if (id >= idtablen) ice(hi32,"id '%.*s' exceeds %u",len,idnampool+nam,id);
     idtab[id] = np;
-    idntab[np] = id;
     info("add id %u nid %u",id,np);
     return id; // new
-  } else if (samestr1(idnampool,x,idnampos,len)) return idntab[x]; // existing: common
-  else {
-    idhshmis++;
-    return hi32;
+  } else {
+    np = idtab[x];
+    if (samestr1(idnampool,np,idnampos,len)) return x; // existing: common
+    else {
+      idhshmis++;
+      return hi32;
+    }
   }
 }
 
@@ -564,24 +570,29 @@ static void mkslithash(ub4 cnt)
 
 static ub4 slitcheck(ub1 *pool,ub4 nam0,ub4 nam1,ub4 v)
 {
-  ub4 x;
-  ub4 len = nam1 - nam0;
+  ub4 x,np,id;
+  ub4 l1,len = nam1 - nam0;
 
   if (v >= slithshlen) ice(0,"slit ndx %u above %u for %.*s",v,slithshlen,len,pool+nam0);
 
   x = slithsh[v];
 
   if (x == 0) { // slot free - consolidate pool
-    slithsh[v] = x = slitpos;
+    id = slitucnt++;
+    slithsh[v] = id;
+    np = slitpos;
     // info("v %u x %u nam0 %u top %u",v,x,nam0,slittop);
     slitpos = align4(nam1 + 1);
     slithshcnt++;
+    slitids[id] = np | ((ub8)len << 32);
     vrb("add slit len %u '%.*s' at %u",len,min(len,80),pool+nam0,nam0);
-    return x; // new
+    return id; // new
 
   } else {
+    l1 = slitids[x] >> 32;
+    np = slitids[x] & hi32;
     // info("v %u x %u nam0 %u top %u",v,x,nam0,slittop);
-    if (samestr1(pool,x,nam0,len)) return x;
+    if (l1 == len && memcmp(pool + np,pool + nam0,len) == 0) return x;
     else return 0;
   }
 }
@@ -592,19 +603,20 @@ static ub4 slitgetadd(ub1 *pool,ub4 nam1)
   ub4 nam0 = slitpos;
   ub4 len = nam1 - nam0;
   ub4 v;
-  ub4 x;
+  ub4 x,id;
   ub4 hc,hc2;
   ub2 lim;
 
+  pool[nam1] = 0;
+
   if (len >= Slitint) {
     slitpos = align4(nam1 + 1);
-    pool[nam1] = 0;
-    return nam0;
+    id = slitucnt++;
+    slitids[id] = nam0 | ((ub8)len << 32);
+    return id;
   }
 
   hc = hashalstr(pool+nam0,len,Hshseed);
-
-  pool[nam1] = 0;
 
   hc = (hc >> slithshbit) ^ hc;
   v = hc & slithshmask;
@@ -624,8 +636,10 @@ static ub4 slitgetadd(ub1 *pool,ub4 nam1)
         x = slitcheck(pool,nam0,nam1,v);
         if (x) return x;
       } while (--lim);
-      slitpos = align4(nam1 + 1); // skip intern
-      return nam0;
+      slitpos = align4(nam1 + 1); // skip dedup
+      id = slitucnt++;
+      slitids[id] = nam0 | ((ub8)len << 32);
+      return id;
     }
   }
 }
@@ -811,12 +825,12 @@ static void doemit(struct lexsyn *lsp,cchar *name)
   ub1 atr;
   ub4 dn,bn=0;
   ub8 x8=0;
-  ub4 x4;
+  ub4 x4,np;
   ub2 x2;
   ub2 dfp;
   ub4 fpos=0;
   ub4 pos;
-  ub4 len = 256;
+  ub4 l1,len,blen = 256;
   char buf[256];
   char sbuf[8];
   cchar *str;
@@ -828,7 +842,7 @@ static void doemit(struct lexsyn *lsp,cchar *name)
     dfp = dfps[dn];
     fpos += dfp;
     if (tk >= T99_count) ice(fpos,"invalid token %u",tk);
-    pos = mysnprintf(buf,0,len,"%3u %-10s",dn,tknam(tk));
+    pos = mysnprintf(buf,0,blen,"%3u %-10s",dn,tknam(tk));
 
 #ifdef Emitdetail
     switch (tk) {
@@ -836,33 +850,36 @@ static void doemit(struct lexsyn *lsp,cchar *name)
                   buf[pos++] = id1inv[atr];
                 } else {
                   x8 = bits[bn++];
-                  if (atr == Idlen_n) pos += mysnprintf(buf,pos,len,"%s",idnnam(x8));
+                  if (atr == Idlen_n) pos += mysnprintf(buf,pos,blen,"%s",idnnam(x8));
                   else { id2nam(x8,buf + pos); pos += 2; }
                 }
                 break;
     case Tnlit: if (atr < 10) buf[pos++] = atr + '0';
-                else if (atr < Ilit4) pos += mysnprintf(buf,pos,len,"%u",atr);
+                else if (atr < Ilit4) pos += mysnprintf(buf,pos,blen,"%u",atr);
                 else {
                   x4 = bits[bn++];
-                  if (atr == Ilit4) pos += mysnprintf(buf,pos,len,"%u",x4);
-                  else if (atr == Flit8) pos += mysnprintf(buf,pos,len,"flt %x",x4);
-                  else if (atr >= Ilita) pos += mysnprintf(buf,pos,len,"%s",nlitpool + x4);
+                  if (atr == Ilit4) pos += mysnprintf(buf,pos,blen,"%u",x4);
+                  else if (atr == Flit8) pos += mysnprintf(buf,pos,blen,"flt %x",x4);
+                  else if (atr >= Ilita) pos += mysnprintf(buf,pos,blen,"%s",nlitpool + x4);
                 }
                 break;
-    case Tslit: if (atr < Slit_len) pos += mysnprintf(buf,pos,len,"'%s'",chprint(atr));
+    case Tslit: if (atr < Slit_len) pos += mysnprintf(buf,pos,blen,"'%s'",chprint(atr));
                 else {
                   x4 = bits[bn++];
                   len = atr & ~Slit_len;
-                  if (len > 3) str = chprints(slitpool + x4,32);
-                  else {
+                  if (len > 3) {
+                    l1 = slitids[x4] >> 32;
+                    np = slitids[x4] & hi32;
+                    str = chprintn(slitpool + np,min(l1,32));
+                  } else {
                     *(ub4 *)sbuf = x4;
                     buf[pos++] = sbuf[0];
                     buf[pos++] = sbuf[1];
                     if (len == 3) buf[pos++] = sbuf[2];
                     buf[pos] = 0;
-                    str = chprints(sbuf,8);
+                    str = chprintn(sbuf,len);
                   }
-                  pos += mysnprintf(buf,pos,len,"%3x.%u '%s'",x4,len,str);
+                  pos += mysnprintf(buf,pos,blen,"%3x.%u '%s'",x4,len,str);
                 }
                 break;
     default:    break;
@@ -1038,6 +1055,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   if (slitcnt) {
     slitpos += 5 * (slitcnt+2); // align + 0-term
     showsiz("slit pool",slitpos);
+    slitids = alloc(slitcnt,ub8,Mo_nofill,"lex slit ids",nextcnt);
   }
   slitcnt += slit0cnt;
   showcnt("2str n lit",slitcnt);
@@ -1109,7 +1127,6 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
     mkidhash(uidcnt,idcnt);
     idtablen = uidcnt * 2 + 1024;
     idtab = alloc(idtablen,ub4,Mo_nofill,"lex id tab",nextcnt);
-    idntab = alloc(idnplen,ub4,Mo_nofill,"lex id itab",nextcnt);
   }
   if (id2cnt) {
     mkid2tab();
@@ -1168,6 +1185,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   if (slithshcnt) {
     showcnt("3uniq slit",slithshcnt);
+    showcnt("3uniq slit",slitucnt);
     info("slit hash table used %u` of %u`, skipped %u`",slithshcnt,slithshlen,slitlimcnt);
   }
 

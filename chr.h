@@ -21,6 +21,7 @@
 
 extern cchar *chprint(ub1 c);
 extern const ub1 *chprints(const ub1 *s,ub2 n);
+extern const ub1 *chprintn(const ub1 *s,ub2 n);
 extern ub2 underline(char *buf,ub2 len);
 extern char upcase(char c);
 
