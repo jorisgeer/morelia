@@ -2520,6 +2520,7 @@ static void wrenum(struct bufile *fp,ub1 *lens,cchar **nams,char *name,ub2 cnt,u
 {
   ub2 n;
   sb4 pad = -upad-1;
+  cchar *nam;
 
   if (cnt == 0) {
     myfprintf(fp,"enum %s%s { %c99_count = 1 };\n\n",packed8,name,*name);
@@ -2528,7 +2529,9 @@ static void wrenum(struct bufile *fp,ub1 *lens,cchar **nams,char *name,ub2 cnt,u
 
   myfprintf(fp,"enum %s%s { // gen.%u\n ",packed8,name,__LINE__);
   for (n = 0; n < cnt; n++) {
-    myfprintf(fp," %c%*.*s = %2u,",*name,pad,lens[n],nams[n],n);
+    nam = nams[n];
+    if (strcmp(nam,"false") == 0) nam = "fals";
+    myfprintf(fp," %c%*.*s = %2u,",*name,pad,lens[n],nam,n);
     if ( (n & 7) == 7) myfputs(fp,"\n ",2);
   }
   if (n & 7) myfputs(fp,"\n ",2);

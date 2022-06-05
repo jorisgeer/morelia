@@ -544,7 +544,7 @@ static void mkid2tab(void) {
   id2mask1 = id2nch1-1;
   id2mask2 = id2nch2-1;
   id2tab = (ub2 *)minalloc(id2nch1 * id2nch2 * 2,2,0xff,"lex id2tab");
-  id2nams = (ub2 *)minalloc(id2nch1 * id2nch2 * 2,2,Mo_nofill,"lex id2nam");
+  id2nams = (ub2 *)minalloc(id2nch1 * id2nch2 * 2,2,Mnofil,"lex id2nam");
 }
 
 static void mkslithash(ub4 cnt)
@@ -979,6 +979,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   ub1 Q = 0;
   ub4 N = 0;
   ub1 R0 = 0;
+  ub1 sign = 0;
 
   ub4 id=0;
   ub1 x1;
@@ -1055,7 +1056,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   if (slitcnt) {
     slitpos += 5 * (slitcnt+2); // align + 0-term
     showsiz("slit pool",slitpos);
-    slitids = alloc(slitcnt,ub8,Mo_nofill,"lex slit ids",nextcnt);
+    slitids = alloc(slitcnt,ub8,Mnofil,"lex slit ids",nextcnt);
   }
   slitcnt += slit0cnt;
   showcnt("2str n lit",slitcnt);
@@ -1101,7 +1102,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   tkpart[0].siz = 8;
   tkpart[0].nel = xcnt;
 
-  tkbas = allocset(tkpart,4,Mo_nofill,"lex tokens",nextcnt);
+  tkbas = allocset(tkpart,4,Mnofil,"lex tokens",nextcnt);
   bits = tkpart[0].ptr;
   dfps = tkpart[1].ptr;
   tks = tkpart[2].ptr;
@@ -1111,22 +1112,22 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   nlittop = nlitpos; nlitpos = 0;
   if (nlittop) {
-    nlitpool = alloc(nlittop,ub1,Mo_nofill,"lex nlit pool",nextcnt);
+    nlitpool = alloc(nlittop,ub1,Mnofil,"lex nlit pool",nextcnt);
   }
 
   slittop = slitpos;
   if (slitpos) {
     slittop += 2;
-    slitpool = alloc(slittop,ub1,Mo_nofill,"lex slit pool",nextcnt);
+    slitpool = alloc(slittop,ub1,Mnofil,"lex slit pool",nextcnt);
   }
 
-  if (idnplen) idnampool = alloc(idnplen+4,ub1,Mo_nofill,"lex idnpool",nextcnt);
+  if (idnplen) idnampool = alloc(idnplen+4,ub1,Mnofil,"lex idnpool",nextcnt);
   idnampos = 4;
 
   if (idcnt) {
     mkidhash(uidcnt,idcnt);
     idtablen = uidcnt * 2 + 1024;
-    idtab = alloc(idtablen,ub4,Mo_nofill,"lex id tab",nextcnt);
+    idtab = alloc(idtablen,ub4,Mnofil,"lex id tab",nextcnt);
   }
   if (id2cnt) {
     mkid2tab();
@@ -1136,7 +1137,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   slitpos = 4;
 
   lncnt += 2;
-  lntab = lncnt < 1024 ? minalloc(lncnt * 4,4,Mo_nofill,"lex lntab") : medalloc(lncnt * 4,4,"lex lntab");
+  lntab = lncnt < 1024 ? minalloc(lncnt * 4,4,Mnofil,"lex lntab") : medalloc(lncnt * 4,4,"lex lntab");
 
   setsrcmfile(mf,lntab,lncnt,n);
 
@@ -1341,7 +1342,7 @@ int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *l
   ub1 *sp;
 
   if (slen == 0) { info("%s is empty",path); osclose(fd); return 0; }
-  sp = alloc(xlen,char,Mo_nofill,"lex file",nextcnt);
+  sp = alloc(xlen,char,Mnofil,"lex file",nextcnt);
   memset(sp+slen,0,xlen-slen);
 
   memset(sp,0,slen);
@@ -1358,7 +1359,7 @@ int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *l
   osclose(fd);
 //  if (nr != slen) { error("partial read %'uB of %'uB of %s",(ub4)nr,(ub4)slen,path); return 1; }
 
-  ipath = minalloc(n+1,1,Mo_nofill,"lex inc path");
+  ipath = minalloc(n+1,1,Mnofil,"lex inc path");
   memcpy(ipath,path,n);
   ipath[n] = 0;
 

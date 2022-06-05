@@ -44,8 +44,8 @@ token
 
   ro 4
   rc 4
-#  so
-#  sc
+  so 4
+  sc 4
   qas 4
 #  aas
   das 4
@@ -67,15 +67,16 @@ set
   qq '"
   co {
   cc }
-#  so [
-#  sc ]
+  so [
+  sc ]
   ro (
   rc )
   cl :
   sm ;
   ca ,
   dt .
-  pm +-
+  pp +
+  mm -
   st *
   eq =
   op @%&^|
@@ -112,6 +113,11 @@ keyword
   while
 #  with
 
+builtin
+  False
+  None
+  True
+
 action
 
 # ----------------------
@@ -119,7 +125,8 @@ action
 # ----------------------
 ilit
 1 ilitcnt++;
-2 if (litbin) { if (u4v < Ilit4) atrs[dn] = u4v; else { atrs[dn] = Ilit4; bits[bn++] = u4v; }
+2 if (litbin) {
+2   if (u4v < 0x3f) atrs[dn] = u4v | (sign << 6); else { atrs[dn] = sign ? Ilit4n : Ilit4; bits[bn++] = u4v; }
 2 } else {
 2   bits[bn++] = nlitpos; atrs[dn] = Ilita;
 2   memcpy(nlitpool+nlitpos,sp+N,n-N); nlitpool[nlitpos++] = 0;
@@ -134,16 +141,16 @@ ilit
 # ----------------------
 flit
 1 flitcnt++;
-2 if (litbin && fxp + fdp < E16max) fxp += fdp; else litbin = 0;
+2 if (litbin && fxp > fdp) fxp -= fdp; else litbin = 0;
 2 if (litbin) {
 2   atrs[dn] = Flit8;
-2   bits[bn++] = (fxs << 22) | (fxp << 21) | u4v;
+2   bits[bn++] = ((ub8)sign << 63) | ((ub8)fxs << 62) | ((ub8)fxp << 54) | u4v;
 2 } else {
 2   bits[bn++] = nlitpos; atrs[dn] = Flita;
 2   memcpy(nlitpool+nlitpos,sp+N,n-N); nlitpool[nlitpos++] = 0;
 2   nlitpos += n-N; litfpi=0; litbin = 1;
 2 }
-2 fxp=0;fxs=0;fdp=0;
+2 fxp=0;fxs=0;fdp=0;sign=0;
 1 nlitpos += n-N;
 #  info("flit %u",u4v);
 
@@ -319,10 +326,10 @@ dobo
 # ----------------------
 # closing ]
 # ----------------------
-#dosc
-#  if (bolvl == 0) lxerror(l,0,`L,c,Lxe_count);
-#  bolvl--;
-#  if (bolvlc[bolvl] != '[') lxerror(l,0,`L,c,Lxe_count);
+dosc
+  if (bolvl == 0) lxerror(l,0,`L,c,Lxe_count);
+  bolvl--;
+  if (bolvlc[bolvl] != '[') lxerror(l,0,`L,c,Lxe_count);
 
 # ----------------------
 # closing )
@@ -364,7 +371,11 @@ root
 # line comments
   hs cmt
 
-# int literals - different from slit prefix
+# plus min
+  pp pm . 2. sign = 0;
+  mm pm . 2. sign = 1;
+
+# int literals
 
   # single digit
   nm. flitfr . N=n;\
@@ -379,11 +390,11 @@ root
   nm filit . N=n;\
              2. u4v = c - '0';
 
-# identifier
+# identifier - different from slit prefix
   af id1 3.id .prvc1 = c;\
               1. N=n;
 
-# string literal
+# string literal - no prefix
   qq slit0 . .Q=c;\
              1.N=n;
 
@@ -395,8 +406,8 @@ root
   { . co dobo
   } . cc docc
 
-#  [ . so dobo
-#  ] . sc dosc
+  [ . so dobo
+  ] . sc dosc
 
   ( . ro dobo
   ) . rc dorc
@@ -421,8 +432,6 @@ root
   ! .    . 2. atrs[dn] = c;
 
 # pm= . aas.
-
-  pm . pm. 2. atrs[dn] = c;
 
   = . das
 
@@ -482,6 +491,17 @@ id
 #            id
   ot -root . id
 
+# --------------
+# sign
+# --------------
+pm
+  +
+  - . . 2. sign ^= 1;
+  0 zilit0 . N=n;\
+             2. u4v = 0;
+  nm -root
+  ot -root pm 2. atrs[dn] = sign;
+
 # ---------------------
 # prefixed integer literal
 # ---------------------
@@ -531,7 +551,7 @@ id
   j root 2.nlit 2. litfpi = 1;\
                flit
 
-  ot -root 2.nlit flit
+#  ot -root 2.nlit flit
 
 .flitxp
   nm . . 2. if (litbin && fxp < E16max) fxp = fxp * 10 + c - '0'; else litbin = 0;
