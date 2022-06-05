@@ -488,7 +488,7 @@ static Noret void mysigact(int sig,siginfo_t *si,void *pp)
     break;
 
   default:
-    pos = fmtstring(buf,"\nsignal %u errno %d", sig,si->si_errno);
+    pos = fmtstring(buf,"\nsignal %u errno %d p %p", sig,si->si_errno,pp);
   }
 
   pos += mysnprintf(buf,pos,buflen,"\npid %u\n",globs.pid);

@@ -133,6 +133,7 @@ static ub4 prog[64] = {
 };
 
 static ub4 lvarmem[64];
+static volatile ub4 vx;
 
 static void dotest(void)
 {
@@ -157,12 +158,12 @@ static void dotest(void)
 
   timeit2(&T0,n,"runit");
 
-  x = 0;
+  vx = 0;
   while (n) {
-    x += 2;
+    vx += 2;
     n--;
   }
-  timeit2(&T0,n,"runit");
+  timeit2(&T0,vx,"runit");
 
   info("nvar %u avar %u",lvarmem[Nvar],lvarmem[Avar]);
 }

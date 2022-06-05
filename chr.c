@@ -182,7 +182,6 @@ const ub1 *chprints(const ub1 *s,ub2 n)
 {
   ub4 pos=0,len = min(252,n);
   ub1 c;
-  const ub1 *q;
   static ub1 buf[256];
 
   while ( (c=*s++) && pos < len ) {
@@ -197,7 +196,6 @@ const ub1 *chprintn(const ub1 *s,ub2 n)
 {
   ub4 pos=0,len = min(252,n);
   ub1 c;
-  const ub1 *q;
   static ub1 buf[256];
 
   while (pos < len ) {

@@ -31,6 +31,21 @@ ub1 atox1(ub1 c)
   else return 16;
 }
 
+ub4 atou(cchar *p,ub2 len)
+{
+  ub4 x=0;
+  ub1 c;
+
+  if (p == nil || len == 0) return 0;
+
+  x = *p++ - '0';
+  while (--len) {
+    c = *p++;
+    x = x * 10 + (c - '0');
+  }
+  return x;
+}
+
 ub4 sat32(ub8 x,ub8 y)
 {
   ub8 xy = x * y;

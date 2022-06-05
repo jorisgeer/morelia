@@ -21,7 +21,7 @@
 
 #define MFLN (__LINE__|(ub4)(msgfile << 16))
 
-#define Mo_nofill 256
+#define Mnofil 256
 #define Mo_ok0 512
 
 struct expmem {

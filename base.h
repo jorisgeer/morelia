@@ -54,7 +54,10 @@ typedef const char cchar;
 #define hi24 0xffffff
 #define hi28 0xfffffff
 #define hi32 0xffffffffU
+#define hi56 0xffffffffffffffUL
 #define hi64 0xffffffffffffffffUL
+
+#define Bit63 0x8000000000000000UL
 
 #define Fname 256
 #define Pathname 4096
@@ -83,7 +86,7 @@ typedef const char cchar;
  #define quick_exit(c) _Exit(c)
 #endif
 
-#if defined __clang__
+#if defined __clang__ && defined __clang_major__
  #define Packed8 __attribute__((packed))
  #define Fallthrough __attribute__ ((fallthrough));
  #define Mallike __attribute__ ((malloc))
@@ -112,7 +115,7 @@ typedef const char cchar;
   #endif
  #endif
 
-#elif defined __GNUC__
+#elif defined __GNUC__ && __GNUC__ > 3
  #define Packed8 __attribute__((packed))
  #define Fallthrough __attribute__ ((fallthrough));
  #define Mallike __attribute__ ((malloc))
@@ -148,6 +151,7 @@ extern ub4 hex2ub4(const char *s, ub4 *pv);
 extern int hex2ub8(const char *s, ub8 *pv);
 extern ub4 bstr2ub4(const char *s, ub4 *pv);
 extern ub1 atox1(ub1 c);
+extern ub4 atou(cchar *p,ub2 len);
 
 extern ub4 sat32(ub8 x,ub8 y);
 
@@ -162,10 +166,11 @@ extern ub2 expndx(ub2 x,ub2 lim);
 
 extern int inibase(void);
 
-enum Shsrcfile { Shsrc_ast,Shsrc_base,Shsrc_dia,Shsrc_eval,Shsrc_mem,Shsrc_msg,
+enum Shsrcfile { Shsrc_ast,Shsrc_base,Shsrc_dia,Shsrc_eval,Shsrc_msg,
+  Shsrc_lex,Shsrc_os,Shsrc_syn,Shsrc_main,Shsrc_time,Shsrc_util,
+  Shsrc_vm,Shsrc_vmrun,Shsrc_mem,
+  Shsrc_lex1,Shsrc_lex2,
   Shsrc_genir,Shsrc_genlex,Shsrc_gensyn,
-  Shsrc_lex,Shsrc_lex1,Shsrc_lex2,Shsrc_os,Shsrc_syn,Shsrc_main,Shsrc_time,Shsrc_util,
-  Shsrc_vm,Shsrc_vmrun,
   Shsrc_count};
 
 enum Pass { Lexpas=1,Synpas=2,Astpas=4 };

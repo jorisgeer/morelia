@@ -57,9 +57,9 @@ static ub4 aiuses[2];
 
 static ub4 totalkb,maxkb;
 
-static cchar *descs[Memdesc * Shsrc_count];
-static ub4 flns[Memdesc * Shsrc_count];
-static ub2 elsizes[Memdesc * Shsrc_count];
+static cchar *descs[Memdesc * (Shsrc_mem+1)];
+static ub4 flns[Memdesc * (Shsrc_mem+1)];
+static ub2 elsizes[Memdesc * (Shsrc_mem+1)];
 
 struct ainfo {
   void *ptr;
@@ -314,13 +314,13 @@ void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter
     if (!p) fatal(fln,"cannot alloc %u`B, total %u MB for %s: %m",nn,totalmb,desc);
     *(ub4 *)p = nn;
     p += align4(4,align);
-    if (fil && fil < Mo_nofill) memset(p,fil,n);
+    if (fil && fil < Mnofil) memset(p,fil,n);
   } else {
     ismmap = 0;
     vrbfln(fln,"mem.%u alloc %u`B %s",__LINE__,n,desc);
     p = malloc(n);
     if (!p) fatal(fln,"cannot alloc %u`B, total %u MB for %s: %m", n,totalmb,desc);
-    if (fil < Mo_nofill) memset(p,fil,n);
+    if (fil < Mnofil) memset(p,fil,n);
     x8 = (ub8)p & pagemask;
     if (x8 <= maxalign) return p; // not freed
   }
@@ -329,6 +329,8 @@ void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter
   if (ai == nil) return p;
 
   mod = fln >> 16;
+  if (mod > Shsrc_mem) return p;
+
   allan = mod * Memdesc + counter;
   descs[allan] = desc;
   flns[allan] = fln;
@@ -374,6 +376,7 @@ void afree_fln(ub4 fln,void *p,const char *desc,ub2 counter)
     }
 
     mod = fln >> 16;
+    if (mod > Shsrc_mem) return;
     anchor = mod * Memdesc + counter;
     descs[anchor] = desc;
     flns[anchor] = fln;

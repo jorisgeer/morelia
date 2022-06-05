@@ -536,7 +536,7 @@ void myfopen(struct bufile *f,ub4 len,bool perm)
   f->top = len;
 
   f->perm = perm;
-  f->buf = alloc(len,ub1,Mo_nofill,f->nam,nextcnt);
+  f->buf = alloc(len,ub1,Mnofil,f->nam,nextcnt);
   f->fd = -1;
 }
 
@@ -658,7 +658,7 @@ ub4 *mklntab(cchar *p,ub4 n,ub4 *pcnt)
   cnt++;
 
   // todo
-  if (cnt < 1024) tab = minalloc(cnt * 4,4,Mo_nofill,"lintab");
+  if (cnt < 1024) tab = minalloc(cnt * 4,4,Mnofil,"lintab");
   else tab = medalloc(cnt * 4,4,"lintab");
 
   cnt = 0;
