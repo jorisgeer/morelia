@@ -45,8 +45,6 @@ static ub4 msgfile = Shsrc_syn;
 #include "astyp.h"
 #include "synast.h"
 
-// #include "exp.h"
-
 #ifdef __clang__
  #pragma clang diagnostic ignored "-Wenum-conversion"
  #pragma clang diagnostic ignored "-Wswitch-enum"
@@ -362,7 +360,7 @@ static void __attribute__ ((format (printf,10,11))) diafln(
   }
 
   //                          lvl  prdnam    se  si symnam   ti     tk
-  pos = mysnprintf(buf,0,len,"%2u %-14.12s`z %2u %u %-14.12s %2u %c%-8.6s",lvl,prdnam(ve,tk),se,si,symnam(s),ti,c,tknam(tk,0));
+  pos = mysnprintf(buf,0,len,"%2u %-14.12s`z %2u %u %-14.12s %2u %c%-8.6s %s",lvl,prdnam(ve,tk),se,si,symnam(s),ti,c,tknam(tk,0),ntnam(r));
 //  pos += mysnprintf(buf,pos,256," %02x",bits);
 
 #ifdef Emitdetail
@@ -427,7 +425,6 @@ int syn(struct lexsyn *lsp,struct synast *sa)
 
   ub4 tcnt = lsp->tkcnt;
   ub4 bcnt = lsp->tbcnt;
-//  cchar *srcnam = lsp->
   ub1 grp;
 
   if (tcnt == 0) ice(0,0,"%s empty token list","srcnam");
@@ -445,7 +442,7 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   // synthesized args aka attributes
   // token index or node index
   ub4 args[Depth * Nodarg];
-  ub4 *argp;
+  ub4 arg,*argp;
 
   ub8 vals[Depth * Nodarg];
   ub8 *valp;
@@ -453,7 +450,7 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   ub2 n;
 
   ub2 curscope = 0,hiblklvl = 0,scid = 0;
-  ub4 hiblkti = 0;
+  ub4 hiblkti=0;
 
   // repetitions
   ub2 rep,repcnt=0,repcnts[Depth];
@@ -483,7 +480,7 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   ub2 se=0,nxse,x2;
   ub4 ndti=0;
   enum Production ve,ve1,ve2=0,nxve;
-  enum Op op;
+  enum Bop bop;
   ub1 ai;
   ub4 x4;
   const enum Ctl *cp=nil;
@@ -501,13 +498,13 @@ int syn(struct lexsyn *lsp,struct synast *sa)
 
   ub4 uidcnt = lsp->uidcnt;
 
-//  ub4 *idtab =
-
-  ub4 estndcnt;
+  ub4 estndcnt,estandcnt;
 
   ub4 ndcnts[Acount];
+  ub4 rep2cnts[Acount];
 
-  memset(ndcnts,0,sizeof(ndcnts));
+  memset(ndcnts,0,Acount * ub4siz);
+  memset(rep2cnts,0,Acount * ub4siz);
 
   ub2 uid1cnt = lsp->uid1cnt;
   ub2 uid2cnt = lsp->uid2cnt;
@@ -518,19 +515,24 @@ int syn(struct lexsyn *lsp,struct synast *sa)
 
   ub4 valcnt = idcnt + lsp->nlitcnt + lsp->slitcnt;
 
-  estndcnt = tkgrps[0] + tkgrps[1] + tkgrps[2]; // storables + ops + scope
+  estndcnt = estandcnt = tkgrps[0];
+
+  estndcnt += tkgrps[1] + tkgrps[2]; // storables + ops + scope
 
   if (estndcnt == 0) ice(0,hi32,"no nodes for %u tokens",tcnt);
 
-  ub4 nodlim = estndcnt * 2;
+  ub4 nodlim = estndcnt * 4 + 1024;
+  estandcnt += nodlim + 1024;
 
-  ub4 *ndargs = alloc(nodlim * Nodarg,ub4,Mo_nofill,"node args",nextcnt);
+  ub4 *nhtab = alloc(estandcnt,ub4,Mnofil,"syn nhtab",nextcnt);
 
-  ub8 *ndvals = alloc(valcnt,ub8,Mo_nofill,"node vals",nextcnt);
+  ub4 *ndargs = alloc(nodlim * Nodarg,ub4,Mnofil,"syn ndargs",nextcnt);
 
-  struct rnode *np,*np1,*np2,*nodes = alloc(nodlim,struct rnode,Mo_nofill,"nodes",nextcnt);
+  ub8 *ndvals = alloc(valcnt,ub8,Mnofil,"syn ndvals",nextcnt);
 
-  ub4 nid=0,n4,nd;
+  struct rnode *np,*np1,*np2,*nodes = alloc(nodlim,struct rnode,Mnofil,"syn nodes",nextcnt);
+
+  ub4 nid=0,n4,nd,aid=0;
 
   ub1 acnt;
   ub2 argcnt,cnt,am,ac;
@@ -686,6 +688,15 @@ nxtsym:
         switch (tk) {
 
           case Tid:
+
+            if (atr == Idctl_blt) {
+              switch (bits) {
+              case BTrue:  ndtyp = Atru; break;
+              case BFalse: ndtyp = Afal; break;
+              }
+              ndti = 0;
+              break;
+            }
             ndtyp = Aid;
             ndti = ndcnts[ndtyp]++;
             idid = bits & hi32;
@@ -699,16 +710,28 @@ nxtsym:
             break;
 
           case Tnlit:
-            if (atr < Ilit4) { ndtyp = Ailits; ndti = atr; }
-            else {
-              bits = tkbits[bi++];
-              if (atr == Ilit4) {
-                if (bits < Atymsk) { ndtyp = Ailits; ndti = bits; }
-                else ndtyp = Ailit;
-              } else if (atr == Flit8) ndtyp = Aflit;
-              else ice(0,0,"ascii lits %u todo",atr);
+            if (atr < Ilit4) {
+              if (atr & 0x40) {
+                ndtyp = Ailitns; ndti = atr & 0x3f;
+              } else ndtyp = Ailits; ndti = atr; break;
             }
-            if (ndtyp != Ailits) {
+            bits = tkbits[bi++];
+            switch (atr) {
+            case Ilit4:
+              if (bits < Atymsk) { ndtyp = Ailits; ndti = bits; }
+              else ndtyp = Ailit;
+              break;
+            case Ilit4n:
+              if (bits < Atymsk) { ndtyp = Ailitns; ndti = bits; }
+              else ndtyp = Ailitn;
+              break;
+            case Flit8:
+              ndtyp = Aflit; break;
+            case Ilita:
+            case Flita: ice(0,0,"ascii lits %u todo",atr);
+            default: break;
+            }
+            if (ndtyp != Ailits && ndtyp != Ailitns) {
               ndti = ndcnts[ndtyp]++;
               valp[argc] = bits;
             }
@@ -726,7 +749,8 @@ nxtsym:
             else ndti = dirprds[tk];
             break;
         }
-        argp[argc] = ndti | (ndtyp << Atybit);
+        nhtab[aid] = ndti | (ndtyp << Atybit) | (atr << Aopbit);
+        argp[argc] = aid++;
 
         info("arg %u %x t %u ve %u si %u",argc,argp[argc],ndtyp,ve,si);
 
@@ -778,26 +802,47 @@ nxtsym:
           if (argp[argc] == hi32) {  // store first - common occurence as ti : others are at ti+n
 
         switch (tk) {
-          case Tid:   bits = tkbits[bi++]; ndtyp = Aid;
-                      idid = bits & hi32;
-                      if (atr == Idlen_2) idid += uid1cnt;
-                      else if (atr == Idlen_n) idid += uid1cnt + uid2cnt;
-                      else idid = atr;
-                      ndti = ndcnts[ndtyp]++;
-                      valp[argc] = idid | ((ub8)fpos << 32);
-                      break;
+          case Tid:
+             bits = tkbits[bi++];
+             if (atr == Idctl_blt) {
+              switch (bits) {
+              case BTrue:  ndtyp = Atru; break;
+              case BFalse: ndtyp = Afal; break;
+              }
+              ndti = 0;
+              break;
+             }
+             ndtyp = Aid;
+             idid = bits & hi32;
+             if (atr == Idlen_2) idid += uid1cnt;
+             else if (atr == Idlen_n) idid += uid1cnt + uid2cnt;
+             else idid = atr;
+             ndti = ndcnts[ndtyp]++;
+             valp[argc] = idid | ((ub8)fpos << 32);
+             break;
 
           case Tnlit:
-            if (atr < Ilit4) { ndtyp = Ailits; ndti = atr; }
-            else {
-              bits = tkbits[bi++];
-              if (atr == Ilit4) {
-                if (bits < Atymsk) { ndtyp = Ailits; ndti = bits; }
-                else ndtyp = Ailit;
-              } else if (atr == Flit8) ndtyp = Aflit;
-              else ice(0,0,"ascii lits %u todo",atr);
+            if (atr < Ilit4) {
+              if (atr & 0x40) {
+                ndtyp = Ailitns; ndti = atr & 0x3f;
+              } else ndtyp = Ailits; ndti = atr; break;
             }
-            if (ndtyp != Ailits) {
+            bits = tkbits[bi++];
+            switch (atr) {
+            case Ilit4:
+              if (bits < Atymsk) { ndtyp = Ailits; ndti = bits; }
+              else ndtyp = Ailit;
+              break;
+            case Ilit4n:
+              if (bits < Atymsk) { ndtyp = Ailitns; ndti = bits; }
+              else ndtyp = Ailitn;
+              break;
+            case Flit8:  ndtyp = Aflit; break;
+            case Ilita:
+            case Flita: ice(0,0,"ascii lits %u todo",atr);
+            default: break;
+            }
+            if (ndtyp != Ailits && ndtyp != Ailitns) {
               ndti = ndcnts[ndtyp]++;
               valp[argc] = bits;
             }
@@ -809,24 +854,26 @@ nxtsym:
                       break;
 
           case Tast: argp[argc] = (Omul << Aopbit) | (Aop << Atybit); break;
-          case Tpm: bits1 = atr; op = bits1 == '+' ? Opls : Omin; argp[argc] = (op << Aopbit) | (Aop << Atybit); break;
+          case Tpm: bits1 = atr; bop = bits1 ? Oadd : Osub; argp[argc] = (bop << Aopbit) | (Aop << Atybit); break;
           case Top: bits1 = atr;
-                    op = (enum Op)bits1;
-                    argp[argc] = (op << Aopbit) | (Aop << Atybit);
+                    bop = (enum Bop)bits1;
+                    argp[argc] = (bop << Aopbit) | (Aop << Atybit);
                     break;
           default:  ndtyp = Acount; break; // todo rep
         }
 
             if (ndtyp <= Aleaf) {
               if (ndti >= Acntlim) serror(fpos,"node count exceeds limit %u",Acntlim);
+              nhtab[aid] = ndti | (ndtyp << Atybit);
               info("arg %u t %u",argc,ndtyp);
-              argp[argc] = ndti | (ndtyp << Atybit);
+              argp[argc] = aid++;
             }
             // info("arg %u %x ve %u si %u",argc,argp[argc],ve,si);
 
           } else { // repetition not for grp 0 or 1
             info("arg %u %x ve %u si %u",argc,argp[argc],ve,si);
-            argp[argc] += (1U << Aopbit);
+            arg = argp[argc];
+            nhtab[arg] += (1U << Aopbit);
           }
         }
         if (repc != Crep0n) si++;
@@ -863,18 +910,20 @@ endsym:
 //  napos0 = napos;
   bit = 1;
   am = 0;
+  argc = 0;
 
   for (ac = 0; ac < Nodarg; ac++) {
     nd = argp[ac];
     if (nd != hi32) {
       ndargs[napos++] = nd;
-      if (nd <= (Aval << Atybit)) ndvals[nvpos++] = valp[ac];
+      if (nd <= (Aval << Atybit)) { ndvals[nvpos++] = valp[ac]; argc++; }
       am |= bit;
+      argc++;
     }
     bit <<= 1;
   }
 
-  if (am) {
+  if (argc > 1) {
 
     sdia(lsp,ti,0,s,r,lvl,se,si,"node %2u",ni);
 
@@ -936,7 +985,7 @@ endsym:
     } else { // nonmatch at end of rep -> always ok end
       sdia(lsp,ti,0,s,r,lvl,ve,si,"end rep on %u tk %s %u",se,tknam(tk,0),nxve);
 
-      if (repcnt > 2) { // create rep node
+      if (repcnt > 1) { // create rep node
         np = nodes + ni;
 
 //        np->ai = napos;
@@ -944,26 +993,20 @@ endsym:
         ndargs[napos++] = repcnt;
 
         ni2 = repfnids[lvl];
-        ndcnts[Arep] += repcnt;
+        ndtyp = prd2nod[ve];
+        if (repcnt == 2) rep2cnts[ndtyp]++;
+        ndcnts[ndtyp]++;
         for (rep = 0; rep < repcnt; rep++) {
           np2 = nodes + ni2;
           ve2 = np->ve;
           ndtyp = prd2nod[ve2];
           ndti = ndcnts[ndtyp]++;
-          ndargs[napos++] = ndti | (ndtyp << Atybit);
+          nhtab[aid] = ndti | (ndtyp << Atybit);
+          ndargs[napos++] = aid++;
           ni2 = np2->sib;
         }
         np->ve = ve2;
         nid = ni++;
-      } else if (repcnt == 2) {
-        ni1 = repfnids[lvl];
-        ni2 = nodes[ni1].sib;
-        np1 = nodes + ni2;
-        ve1 = np1->ve;
-
-        ndtyp = prd2nod[ve2];
-        ndti = ndcnts[ndtyp]++;
-        ndargs[napos++] = ndti | (ndtyp << Atybit);
       }
     }
   } else {
@@ -1011,7 +1054,8 @@ endsym:
     ndti = ndcnts[ndtyp]++;
     info("ni %u argc %u t %u",ni,argc,ndtyp);
 
-    nodes[nid].ni = argp[argc] = ndti | (ndtyp << Atybit);
+    nhtab[aid] = ndti | (ndtyp << Atybit);
+    nodes[nid].ni = argp[argc] = aid++;
   }
 
   reppm = 0;
@@ -1045,7 +1089,7 @@ endsym:
 
   if (ni == 0) return 0;
 
-  info("max scope depth %u",hiblklvl);
+  info("max scope depth %u at %u",hiblklvl,hiblkti);
   showcnt("3scope blocks",scid);
 
   hilvl = 0;
@@ -1058,16 +1102,19 @@ endsym:
 
   if (globs.rununtil < 4) { info("until %u",globs.rununtil); return 1; }
 
-  nodes[ni].ni = ((ub4)Acount << Atybit);
+  nhtab[aid] = (ub4)Acount << Atybit; // eof
 
+  sa->nhs = nhtab;
   sa->nodes = nodes;
-  sa->ndcnt = ni+1;
+  sa->ndcnt = ni;
+  sa->aidcnt = aid+1;
   sa->args = ndargs;
   sa->argcnt = napos;
   sa->nscid = scid;
   sa->hiblklvl = hiblklvl;
 
-  memcpy(sa->ndcnts,ndcnts,sizeof(ndcnts));
+  memcpy(sa->ndcnts,ndcnts,Acount * ub4siz);
+  memcpy(sa->rep2cnts,rep2cnts,Acount * ub4siz);
 
   return rv;
 }

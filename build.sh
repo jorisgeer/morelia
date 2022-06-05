@@ -9,8 +9,8 @@ set -eu
 compiler=gcc
 analyzer=clang
 
-copt='-O2 -march=native'
-copt_t='-O2 -march=native'
+copt='-O1 -march=native'
+copt_t='-O1 -march=native'
 
 # -fanalyzer
 cdiag='-Wall -Wextra -Wshadow -Wundef -Wno-unused -Wno-padded -Wno-char-subscripts -Werror -Wstack-usage=65536'
@@ -36,6 +36,8 @@ anacfmt='-fno-caret-diagnostics -fno-color-diagnostics -fno-diagnostics-show-opt
 anacflags="$anacdia $anacfmt"
 
 asmcflags='-fverbose-asm -frandon-seed=0'
+
+# egrep -o -h -E 'enum [A-Za-z]+ {' *.h | sort
 
 lang=minipython
 
@@ -169,6 +171,9 @@ ld()
 
   if [ $newer -eq 0 -a -f "$tgt" ]; then
     for dep in "$@"; do
+      if [ "$dep" = "-lm" ]; then
+          continue;
+      fi
       if [ -f "$dep" -a "$dep" -nt "$tgt" ]; then
         newer=1
       fi
@@ -274,7 +279,7 @@ cc mem.o  mem.c base.h os.h mem.h msg.h
 cc fmt.o  fmt.c base.h fmt.h chr.h os.h
 cc chr.o  chr.c base.h
 cc math.o math.c base.h math.h
-cc msg.o  msg.c base.h chr.h fmt.h msg.h mem.h os.h util.h
+cc msg.o  msg.c base.h fmt.h msg.h mem.h os.h util.h
 cc dia.o  dia.c base.h dia.h msg.h
 cc util.o util.c base.h mem.h os.h fmt.h msg.h tim.h util.h
 cc tim.o  tim.c base.h mem.h fmt.h msg.h tim.h
@@ -294,14 +299,26 @@ if [ $dogen -eq 1 ]; then
 
   run syntab.i $lang.syn $always gensyn "$lang.syn syntab.i syndef.h"
   run syndef.h $lang.syn $always gensyn "$lang.syn syntab.i syndef.h"
+
+  tc Genir genir.o genir.c base.h os.h fmt.h msg.h mem.h util.h tim.h irtyp.h
+  ld       genir   genir.o base.o os.o fmt.o msg.o mem.o util.o tim.o
+
+  run irdef.h irtyp.h $always genir "irdef.h"
 fi
 
 if [ $ana -eq 0 ]; then
   cc lex.o lex.c lextb1.i lextb2.i tok.h lexdef.h base.h chr.h dia.h mem.h msg.h fmt.h os.h lexsyn.h hash.h
 fi
 
-cc syn.o syn.c base.h chr.h mem.h msg.h fmt.h syn.h lexsyn.h syndef.h syntab.i synast.h exp.h tok.h
-cc ast.o ast.c base.h chr.h mem.h msg.h fmt.h lexsyn.h synast.h syndef.h ast.h exp.h tok.h
-cc morelia.o morelia.c base.h dia.h mem.h os.h msg.h lexsyn.h syndef.h synast.h util.h
+cc syn.o syn.c base.h chr.h mem.h msg.h fmt.h syn.h lexsyn.h syndef.h syntab.i astyp.h synast.h tok.h
 
-ld morelia morelia.o base.o chr.o dia.o fmt.o lex.o math.o mem.o msg.o os.o syn.o ast.o util.o tim.o
+cc ast.o ast.c base.h chr.h mem.h msg.h fmt.h lexsyn.h astyp.h synast.h syndef.h ast.h
+
+cc vm.o vm.c base.h irtyp.h irdef.h
+cc vmrun.o vmrun.c base.h mem.h os.h msg.h fmt.h util.h tim.h irtyp.h irdef.h
+
+ld vmrun vmrun.o base.o mem.o os.o fmt.o msg.o util.o tim.o vm.o
+
+cc morelia.o morelia.c base.h dia.h mem.h os.h msg.h lexsyn.h syndef.h synast.h astyp.h util.h
+
+ld morelia morelia.o base.o chr.o dia.o fmt.o lex.o math.o mem.o msg.o os.o syn.o ast.o util.o tim.o -lm

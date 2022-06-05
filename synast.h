@@ -23,11 +23,13 @@ struct synast {
   struct rnode *nodes;
   ub4 *args;
   ub8 *vals;
-  ub4 idcnt,uidcnt;
+  ub4 *nhs;
+  ub4 idcnt,uidcnt,aidcnt;
   ub4 ndcnt,argcnt;
   ub4 nscid;
   ub2 hiblklvl;
   ub4 ndcnts[Acount];
+  ub4 rep2cnts[Acount];
 };
 
 #define Nodarg 4

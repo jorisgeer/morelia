@@ -19,25 +19,43 @@
    If not, see http://www.gnu.org/licenses.
  */
 
-#define Depth 256
+// enum Role { Lhs,Rhs };
 
-enum Uop { Uinc,Udec };
+enum Vloc { Vlocl, Vglob, Vlit };
+enum Typ { Yint, Yflt };
 
-enum Bop { Badd,Bmul };
+// generic
+struct agen {
+  enum Typ ty;
+  ub1 res; // reg for result
+};
 
-enum Role { Lhs,Rhs };
-
-struct ilit { // term ilit
+// term aka leaf
+struct ilit {
   ub8 val;
 };
 
-struct id { // term id
+struct flit {
+  double val;
+};
+
+struct slit {
+  ub4 val;
+};
+
+struct aid {
   ub4 id;
-  ub4 def;  // defining var, self if none
-  ub4 ofs;  // frame offset
-  ub4 scid; // scope id
   ub1 lvl;
-  enum Role rol;
+  // enum Role rol;
+};
+
+// derived
+struct var {
+  ub4 id;   // ni of aid
+  ub4 tlo;  // 31-28 type  27-25 loc 24-0 offset
+  ub4 ofs;
+  ub1 lvl;
+  // enum Role rol;
 };
 
 // nonterms
@@ -57,13 +75,13 @@ struct aexp {
 };
 
 struct pexp { // partial binexp
-  ub4 l;
+  ub4 e;
   enum Bop op;
 };
 
 struct asgnst {
   ub4 tgt;
-  ub4 r;
+  ub4 e;
 };
 
 struct blk {
@@ -78,21 +96,32 @@ struct param {
 
 struct fndef {
   ub4 id;
-  ub4 scid0,scid1;
+  ub4 parvid;
+  ub4 parfn;
+  ub4 vid0,vidf0;
+  ub4 pc0,pc1;
+//  ub4 scid0,scid1;
   ub4 plst;
   ub4 blk;
   ub4 ret;
+  ub2 argc;
+  ub2 vidcnt;
 };
 
 struct witer {
   ub4 e;
   ub4 tb,fb;
+  ub4 head,bcc,tail; // labels
+  ub1 lvl;
 };
 
 struct rexp {
   ub4 pos;
-  ub2 cnt;
-  ub2 len;
+  ub2 n;
+  ub2 nu;
+  ub2 opndx;
+  ub1 hit;
+//  ub1 tlo,thi;
 };
 
 struct prmlst {
@@ -109,8 +138,15 @@ struct ast {
   ub4 len;
   ub4 root;
 
-  struct id *ids;
+  ub4 *nhs;
+  struct agen *gens;
+
+  struct aid *ids;
+  struct var *vars;
+
   struct ilit *ilits;
+  struct flit *flits;
+  struct slit *slits;
 
   struct pexp *pexps;
   struct uexp *uexps;
@@ -132,17 +168,21 @@ struct ast {
 
   ub4 nid;
   ub4 uidcnt;
+  ub4 aidcnt;
+  ub4 histlstsiz;
+
+  ub4 ndcnts[Acount];
 
   ub4 *idfpos;
 
   ub4 *repool;
 
-  ub8 *scids;
-  ub2 *scidns;
-  ub4 nscid;
+//  ub8 *scids;
+//  ub2 *scidns;
+//  ub4 nscid;
 
+  ub2 hiblklvl;
   ub1 blkbit;
 };
 
-extern void runast(struct ast *ap,bool emit);
 extern cchar *atynam(enum Astyp t);
