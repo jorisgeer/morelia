@@ -1421,10 +1421,11 @@ static char specreq[Specvlen];
 static char specauthor[Specvlen];
 static char speclang[Specvlen];
 static char specxdate[64];
+static ub4 minver;
 
 static char startrulnam[Specvlen];
 
-enum Specvar { Sv_version,Sv_author,Sv_date,Sv_requires,Sv_lang,Sv_start,Sv_table,Sv_count };
+enum Specvar { Sv_version,Sv_author,Sv_date,Sv_requires,Sv_lang,Sv_minver,Sv_start,Sv_table,Sv_count };
 
 static const char *svnames[Sv_count] = {
  [Sv_version] = "version",
@@ -1432,6 +1433,7 @@ static const char *svnames[Sv_count] = {
  [Sv_date] = "date",
  [Sv_requires] = "requires",
  [Sv_lang] = "language",
+ [Sv_minver] = "minver",
  [Sv_start] = "start",
  [Sv_table] = "table"
 };
@@ -1462,6 +1464,7 @@ static enum Specvar getvar(ub2 lno,cchar *src,ub2 nam0,ub2 nam1)
         case Sv_start:    lvl = Error; break;
         case Sv_date:     lvl = Vrb; break;
         case Sv_version:
+        case Sv_minver:
         case Sv_author:
         case Sv_requires: lvl = Info; break;
         case Sv_lang:     lvl = Warn; break;
@@ -1486,6 +1489,7 @@ static enum Specvar getvar(ub2 lno,cchar *src,ub2 nam0,ub2 nam1)
   case Sv_date:
   case Sv_requires:
   case Sv_lang:
+  case Sv_minver:
   case Sv_start:
     if (svfpos[sv]) {
       serrorfln(FLN,lno|Lno,"var %s redefined",svnames[sv]);
@@ -1526,6 +1530,8 @@ static void getval(enum Specvar sv,cchar *p,ub4 nam0,ub4 namlen,ub2 val0,ub2 val
                     if (chkver(p+val0,vallen) == 0) serror(val0,"required version %.*s incompatible with current %s",vallen,p+val0,version);
                     break;
   case Sv_start:    d = startrulnam; startrnlen = vallen; break;
+  case Sv_minver:   minver = atou(p + val0,vallen); info("minver %u",minver); return;
+
   default: return;
   }
   memcpy(d,p+val0,vallen);
@@ -1644,6 +1650,7 @@ static int rdspec(cchar *fname,ub1 *src)
   ub2 nt0=0,nt;
   ub2 a,acur=0,scur=0,secur=0,sinc,acnt=0;
   ub2 mrg;
+  ub2 ver=0;
 
   struct rule *rp=nil,*rp2;
   ub1 s,*sp=nil,*sp2;
@@ -1818,6 +1825,7 @@ static int rdspec(cchar *fname,ub1 *src)
   break;
 
   case Spat0: // new rule or next alt
+    ver=0;
 
     switch (t) {
     case Cws:  st = Spat1;   break; // indent = next alt
@@ -1860,19 +1868,32 @@ static int rdspec(cchar *fname,ub1 *src)
     switch (t) {
     case Cws:  break;
     case Cnl:  st = Spat0; break;
-    case Chsh: if (c2 == '#') {
-                 symnam0 = n+1;
-                 st = Spat2;
-                 mapped = 1;
-               } else {
-                 st = Scmt;
-                 nxst = Spat0;
-               }
-               break;
-    case Calpha: case Cnum:
-      ucfirst = (c >= 'A' && c <= 'Z');
-      symnam0 = n;
-      st = Spat2;
+
+    case Chsh:
+      if (c2 == '#') {
+        symnam0 = n+1;
+        st = Spat2;
+        mapped = 1;
+      } else {
+        st = Scmt;
+        nxst = Spat0;
+      }
+      break;
+
+    case Cnum:
+      ver = ver * 10 + (c - '0');
+      break;
+
+    case Calpha:
+      if (ver && ver > minver) {
+        sinfo(n,"skipping version %u > %u alt",ver,minver);
+        st = Scmt;
+        nxst = Spat0;
+      } else {
+        ucfirst = (c >= 'A' && c <= 'Z');
+        symnam0 = n;
+        st = Spat2;
+      }
       break;
 
     case Cast:

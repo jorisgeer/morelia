@@ -19,6 +19,7 @@
 #  If not, see http://www.gnu.org/licenses.
 
 language minipython
+minver 37
 version 0.1.0
 author joris
 
@@ -29,7 +30,7 @@ start stmts
 table
 
 stmts
-  *stmt?` +;
+  *stmt?` +; `stmt
 
 param
   Id ?( ?( : expr` ?) = expr` ?)
@@ -37,17 +38,21 @@ param
 prmlst
   *param` +,
 
+target
+  ? Id
+  ? atom` [ pexp` ] `subscr
+
 stmt
-  ? Id = expr `asgnst
-  ? expr`
-  Break
+  ? target = expr` `asgnst
+  ? expr `expst
+  Break`
   If expr` : block` ?( Else : block` ?) `if
   While expr` : block` ?( Else : block` ?) `while
   Def Id ( prmlst` ) : block` `fndef
 
 block
   { stmts` } `block=0
-  stmt `blk-stmt
+  stmt` `blk-stmt
 
 # --- expressions ---
 
@@ -58,11 +63,14 @@ atom
   Id `atom-id
   Nlit `atom-nlit
   Slit `atom-slit
-  ( expr?` ) `grpexp
+  ( expr? ) `grpexp
 
-pexp
-  +atom` +(Pm|Op|Ast)` `exp=1
+uexp
+  Pm?` atom` `uexp
+
+pexp # building block for binary exprs
+  +uexp` +(Pm|Op|Ast)` `pexp=1
 
 expr
-  ? Id := expr` `asexp
-  ? pexp
+  38 ? Id := expr` `asexp
+  ? pexp` `rexp
