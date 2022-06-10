@@ -62,7 +62,7 @@ struct mempart {
 #endif
 
 extern Mallike void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter);
-extern void afree_fln(ub4 fln,void *p,const char *desc,ub2 counter);
+extern void afree_fln(ub4 fln,const void *p,const char *desc,ub2 counter);
 extern void afree0_fln(ub4 fln,void *p,const char *desc,ub2 counter);
 
 extern void *allocset_fln(ub4 fln,struct mempart *parts,ub2 npart,ub2 fil,const char *desc,ub2 counter);

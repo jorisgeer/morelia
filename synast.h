@@ -25,11 +25,11 @@ struct synast {
   ub8 *vals;
   ub4 *nhs;
   ub4 idcnt,uidcnt,aidcnt;
-  ub4 ndcnt,argcnt;
+  ub4 ndcnt,argcnt,valcnt;
   ub4 nscid;
   ub2 hiblklvl;
-  ub4 ndcnts[Acount];
-  ub4 rep2cnts[Acount];
+  ub4 ndcnts[Acount+1];
+  ub4 rep2cnts[Acount+1];
 };
 
 #define Nodarg 4
@@ -38,17 +38,14 @@ struct rnode {
   enum Production ve;
 
   ub1 lvl;
-  ub1 blklvl;
-  ub2 amask;
+//  ub1 blklvl;
+  ub2 amask; // count for reps
 
   ub4 ni;
-//  ub4 ai;  // argndx
+  ub4 ai;  // argndx
   ub4 sib; // sibling for rep
 };
 
 extern int syn(struct lexsyn *lsp,struct synast *sa);
 
 extern void *mkast(struct synast *sa,struct lexsyn *lsp);
-// extern cchar *atynam(enum Astyp t);
-
-extern enum Astyp prd2nod[];

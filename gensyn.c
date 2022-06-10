@@ -2502,18 +2502,20 @@ static ub4 enumln(char *buf,ub4 pos,ub4 len,sb4 wid,cchar *nam,ub2 n,bool last)
 
 static void wrprd(struct bufile *fp,struct bufile *dfp)
 {
-  cchar *comma;
+  cchar *comma,*anam;
   char *pnam;
   ub1 atr,a,si;
   ub2 ve,se,r,i,r8,pid,ve_blk = hi16;
   struct rule *rp;
   struct sentry *ep;
-  ub2 n,pos1=0,pos2=0,pos3=0,pos4=0;
-  ub2 len,len1=2048,len2=512,len3=512,len4=512;
+  ub2 n,pos1=0,pos2=0,pos3=0,pos4=0,pos5=0,pos6=0;
+  ub2 len,len1=2048,blen=512;
   static char buf1[2048];
   char buf2[512];
   char buf3[512];
   char buf4[512];
+  char buf5[512];
+  char buf6[512];
 
   myfprintf(fp,"// < tablen = sentry < 1dirtok = argdir < laid = la\n\n");
 
@@ -2547,16 +2549,35 @@ static void wrprd(struct bufile *fp,struct bufile *dfp)
 
     // nampool
     len = mysnprintf(buf1,pos1,len1,"%s ",pnam);
-    pos2 += mysnprintf(buf2,pos2,len2,"%s%u",comma,pos1);
+    pos2 += mysnprintf(buf2,pos2,blen,"%s%u",comma,pos1);
 
     // atrs
-    pos3 += mysnprintf(buf3,pos3,len3,atr <= 9 ? "  %u" : "  0x%x",atr);
+    pos3 += mysnprintf(buf3,pos3,blen,atr <= 9 ? "  %u" : "  0x%x",atr);
     buf3[pos3++] = ve < vtablen-1 ? ',' : ' ';
-    if (atr & ~Sa_len) pos3 += mysnprintf(buf3,pos3,len3," // %s",atrnam(atr));
+    if (atr & ~Sa_len) pos3 += mysnprintf(buf3,pos3,blen," // %s",atrnam(atr));
     buf3[pos3++] = '\n';
 
     // prdmap
-    pos4 += mysnprintf(buf4,pos4,len4,"%s0x%x",comma,se | r8);
+    pos4 += mysnprintf(buf4,pos4,blen,"%s0x%x",comma,se | r8);
+
+    // prd2nod
+    if (pos5) {
+      pos5 += mysnprintf(buf5,pos5,blen,",\n  ");
+      pos6 += mysnprintf(buf6,pos6,blen,",\n  ");
+    }
+    if (n && rp->rulrep == 0) {
+      anam = rp->prdnam[a];
+      pos5 += mysnprintf(buf5,pos5,blen,"[P%s]%*s = A%.*s",pnam,n > 12 ? 0 : n - 12," ",n,anam);
+    } else {
+      pos5 += mysnprintf(buf5,pos5,blen,"[P%s]%*s = Acount",pnam,n > 12 ? 0 : n - 12," ");
+    }
+
+    if (n && rp->rulrep == 1) {
+      anam = rp->prdnam[a];
+      pos6 += mysnprintf(buf6,pos6,blen,"[P%s]%*s = A%.*slst",pnam,n > 12 ? 0 : n - 12," ",n,anam);
+    } else {
+      pos6 += mysnprintf(buf6,pos6,blen,"[P%s]%*s = Acount",pnam,n > 12 ? 0 : n - 12," ");
+    }
 
     pos1 += len;
   }
@@ -2581,14 +2602,18 @@ static void wrprd(struct bufile *fp,struct bufile *dfp)
   pos1 += enumln(buf1,pos1,len1,pad,"tablen",vtablen,0);
 
   for (i = 0; i < ndirprd1; i++) {
-    pnam = dir1prdnams + i * Dirprdnam;
+    pnam = dir1prdnams + i * Dirprdnam; n = strlen(pnam);
     pos1 += enumln(buf1,pos1,len1,pad,pnam,i + vtablen,0);
+    pos5 += mysnprintf(buf5,pos5,blen,",\n  [P%s]%*s = Acount",pnam,n > 12 ? 0 : n - 12," ");
+    pos6 += mysnprintf(buf6,pos6,blen,",\n  [P%s]%*s = Acount",pnam,n > 12 ? 0 : n - 12," ");
   }
   pos1 += enumln(buf1,pos1,len1,pad,"1dirtok",vtablen + ndirprd1,0);
 
   for (i = 0; i < ndirprd2; i++) {
-    pnam = dir2prdnams + i * Dirprdnam;
+    pnam = dir2prdnams + i * Dirprdnam; n = strlen(pnam);
     pos1 += enumln(buf1,pos1,len1,pad,pnam,i + vtablen + ndirprd1,0);
+    pos5 += mysnprintf(buf5,pos5,blen,",\n  [P%s]%*s = Acount",pnam,n > 12 ? 0 : n - 12," ");
+    pos6 += mysnprintf(buf6,pos6,blen,",\n  [P%s]%*s = Acount",pnam,n > 12 ? 0 : n - 12," ");
   }
   pos1 += enumln(buf1,pos1,len1,pad,"laid",vtablen + ndirprd,0);
 
@@ -2602,6 +2627,9 @@ static void wrprd(struct bufile *fp,struct bufile *dfp)
   pos1 += enumln(buf1,pos1,len1,pad,"count",vtablen + ndirprd + lacnt + 1,1);
 
   myfprintf(dfp,"enum %sProduction {%.*s\n};\n\n",packed8,pos1,buf1);
+
+  myfprintf(fp,"static enum Astyp prd2nod[Plaid] = {\n  %.*s\n};\n\n",pos5,buf5);
+  myfprintf(fp,"static enum Astyp Prd2nod[Plaid] = {\n  %.*s\n};\n\n",pos6,buf6);
 }
 
 static void wrfhdr(struct bufile *fp,bool addinfo)

@@ -833,6 +833,7 @@ static void doemit(struct lexsyn *lsp,cchar *name)
   ub4 l1,len,blen = 256;
   char buf[256];
   char sbuf[8];
+  char c;
   cchar *str;
 
   if (emit) msglog(name,"tks","lex");
@@ -841,6 +842,7 @@ static void doemit(struct lexsyn *lsp,cchar *name)
     atr = atrs[dn];
     dfp = dfps[dn];
     fpos += dfp;
+    c = 0;
     if (tk >= T99_count) ice(fpos,"invalid token %u",tk);
     pos = mysnprintf(buf,0,blen,"%3u %-10s",dn,tknam(tk));
 
@@ -882,9 +884,12 @@ static void doemit(struct lexsyn *lsp,cchar *name)
                   pos += mysnprintf(buf,pos,blen,"%3x.%u '%s'",x4,len,str);
                 }
                 break;
+    case Tpm:   c = atr ? '-' : '+'; break;
+    case Top:   c = atr; break;
     default:    break;
     }
 #endif
+    if (c) buf[pos++] = c;
     sinfo(fpos,"%.*s",pos,buf);
   }
   if (emit) msglog(nil,nil,nil);
@@ -1085,6 +1090,9 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   if (tkcnt >= Tokencnt) serror(n,"token count %u exceeds limit %u",tkcnt,Tokencnt);
 
+  lsp->idcnt = idcnt + id1cnt + id2cnt;
+  // info("idcnt %u",lsp->idcnt);
+
   uidcnt = exp_est();
   if (idcnt == 0) uidcnt = 0;
 
@@ -1245,7 +1253,6 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   lsp->atrs = atrs;
   lsp->dfps = dfps;
 
-  lsp->idcnt = idcnt + id1cnt + id2cnt;
   lsp->uidcnt = uidcnt;
   lsp->uid1cnt = uid1cnt;
   lsp->uid2cnt = uid2cnt;

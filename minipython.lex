@@ -23,7 +23,7 @@ author joris
 language minipython
 requires genlex 1.0
 
-eof while
+eof sq
 
 token
 # group 0 - storable terms
@@ -300,16 +300,13 @@ dodent
 2   tks[dn] = Tco; setfpos(dn,n)
     dn++;
   } else {
+2   tks[dn] = Tsepa; setfpos(dn,n)
+    dn++;
     while (dent < dentst[dentlvl]) {
 2     tks[dn] = Tcc; setfpos(dn,n)
-      hasdent=1;
       dn++;
       if (dentlvl) dentlvl--;
       else break;
-    }
-    if (hasdent == 0) {
-2     tks[dn] = Tsepa; setfpos(dn,n)
-    dn++;
     }
   }
   }

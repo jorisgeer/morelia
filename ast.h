@@ -108,6 +108,13 @@ struct fndef {
   ub2 vidcnt;
 };
 
+struct aif {
+  ub4 e;
+  ub4 tb,fb;
+  ub4 bcc,tail; // labels
+  ub1 lvl;
+};
+
 struct witer {
   ub4 e;
   ub4 tb,fb;
@@ -171,7 +178,7 @@ struct ast {
   ub4 aidcnt;
   ub4 histlstsiz;
 
-  ub4 ndcnts[Acount];
+  ub4 ndcnts[Acount+1];
 
   ub4 *idfpos;
 
@@ -184,5 +191,3 @@ struct ast {
   ub2 hiblklvl;
   ub1 blkbit;
 };
-
-extern cchar *atynam(enum Astyp t);

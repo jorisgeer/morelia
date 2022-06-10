@@ -48,15 +48,16 @@ static ub4 msgfile = Shsrc_ast;
 
 #define Depth 256 // block nesting
 
-static cchar atynames[] = "Aid\0Ailit\0Ailits\0Aflit\0Aslit\0Atoken\0Aop\0Apexp\0Auexp\0Abexp\0Aiter\0Arep\0Arexp\0Aargs\0Astmts\0Acount\0*inv*\0";
+static cchar atynames[] = "id var ilit ilitn flit slit ilits ilitns tru fal kwd op subscr pexp uexp bexp aexp grpexp blk if while fndef param asgnst expst stmt rexp prmlst stmtlst count *inv*";
 
 cchar *atynam(enum Astyp t)
 {
   cchar *p = atynames;
 
-  if (t > Acount) t = Acount;
-  while (t--) {
-    do ++p; while (*p);
+  if (t > Acount) t = Acount+1;
+  while (t) {
+    t--;
+    do ++p; while (*p != ' ');
     p++;
   }
   return p;
@@ -314,14 +315,17 @@ static ub4 *process(struct ast *ap,bool emit)
     next:
 // -----
 
+    info("sp %u node %u/%u",sp,nn,aidcnt);
+
+    if (nn >= aidcnt) ice(0,0,"sp %u node %u/%u",sp,nn,aidcnt);
     nh = nhs[nn];
     t = nh >> Atybit;
     ni = nh & Atymsk;
     gp = gs + nn;
 
-    if (emit) seqs[seq++] = nn | (pas << 28);
+    if (emit && seq < seqlen) seqs[seq++] = nn | (pas << 28);
 
-    info("%3u %3u %u %-6s ",nn,ni,pas,atynam(t));
+    info("%3u %3u %u %-6s`z ",nn,ni,pas,atynam(t));
 
     switch(t) {
 
@@ -358,6 +362,12 @@ static ub4 *process(struct ast *ap,bool emit)
     case Aop: break;
 
     // expressions
+    case Asubscr:
+    break;
+
+    case Agrpexp:
+    break;
+
     case Auexp:
       uexpp = uexps + ni;
       enn = uexpp->e;
@@ -609,6 +619,9 @@ static ub4 *process(struct ast *ap,bool emit)
       }
     break;
 
+    case Aif:
+    break;
+
 /* while (expr) trustmt else falstmt
 1 :head
 2  a = expr()
@@ -726,6 +739,12 @@ static ub4 *process(struct ast *ap,bool emit)
       }
     break;
 
+    case Aexpst:
+    break;
+
+    case Astmt:
+    break;
+
     case Arexp:
       rexpp = rexps + ni;
       cnt = rexpp->n;
@@ -756,7 +775,7 @@ static ub4 *process(struct ast *ap,bool emit)
     break;
 
     // lists
-    case Astmts:
+    case Astmtlst:
       stmtlp = stmtls + ni;
       cnt = stmtlp->cnt;
       pos = stmtlp->pos;
@@ -779,22 +798,36 @@ static ub4 *process(struct ast *ap,bool emit)
 
       break;
 
-    case Acount: return seqs;
+    case Acount: goto end;
     } // switch (typ)
 
   } while (1);
+
+end:
+
+  afree(stk,"ast q",nextcnt);
+
+  if (emit) seqs[seq] = hi32;
 
   return seqs;
 }
 
 void *mkast(struct synast *sa,struct lexsyn *lsp)
 {
+  ub8 T0=0,T1;
+
+  timeit(&T0,nil);
+  T1 = T0;
+
   struct ast *ap = minalloc(sizeof(struct ast),0,0,"ast");
 
-  struct rnode *rp,*rpp = sa->nodes;
-  ub4 *args = sa->args;
-  ub8 val=0,*vals = sa->vals;
-  ub4 vi=0;
+  const struct rnode *restrict rpp = sa->nodes;
+  const struct rnode *restrict rp;
+  ub4 *restrict args = sa->args;
+  ub4 acnt2,argcnt = sa->argcnt;
+  ub8 val=0,*restrict vals = sa->vals;
+  ub4 vi=0,valcnt = sa->valcnt;
+
   ub4 nvar,nuex,nbex;
   ub4 repos=0;
   ub4 a=0,a0,a1,ni,ni0,i,ii,i0,ai;
@@ -802,7 +835,10 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   ub2 dfp;
   ub4 bits=0;
   ub1 atr;
-  const ub8 *tkbits = lsp->bits;
+
+  const ub8 *restrict tkbits = lsp->bits;
+  cchar *name = lsp->name;
+
   ub2 am,ac,ainc,la;
   enum Production ve;
 
@@ -828,9 +864,7 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   sassert(Acount < 32,"Aback");
 
   ub4 rndcnt = sa->ndcnt;
-
-  ub4 aidcnt = ap->aidcnt;
-
+  ub4 aidcnt = sa->aidcnt;
   ub4 uidcnt = sa->uidcnt;
   ub4 idcnt = sa->idcnt;
 
@@ -840,6 +874,9 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   ub4 nid = ndcnts[Aid];
 
   if (nid != idcnt) ice(0,0,"idcnt %u vs %u,",idcnt,nid);
+
+  showcnt("id",idcnt);
+  showcnt("uid",uidcnt);
 
   ub4 nilit = ndcnts[Ailit];
   ub4 nilitn = ndcnts[Ailitn];
@@ -853,17 +890,20 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   ub4 nrexp = ndcnts[Arexp];
   ub4 nbexp = rep2cnts[Arexp];
 
+  ub4 nif = ndcnts[Aif];
+
   ub4 nwiter = ndcnts[Awhile];
 
   ub4 nblk  = ndcnts[Ablk];
 
   ub4 nasgnst = ndcnts[Aasgnst];
 
-  ub4 nstmtlst = ndcnts[Astmts];
+  ub4 nstmtlst = ndcnts[Astmtlst];
   ub4 histlstsiz = 0;
 
   struct mempart ndpart[Acount];
 
+  memset(ndpart,0,sizeof ndpart);
   if (nstmtlst == 0) ice(hi32,0,"nil stmt list for %u nodes",ap->len);
 
   ub4 *nhs = sa->nhs;
@@ -872,13 +912,13 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   for (t = 0; t < Acount; t++) {
     cnt = ndcnts[t];
     cnt2 += cnt;
-    if (cnt) info("%3u type %u %s",a,t,atynam(t));
+    if (cnt) info("%3u type %u %s`z",cnt,t,atynam(t));
     if (t >= Arexp) repcnt += cnt;
     switch (t) {
     case Apexp: cnt = 0; break;
     case Arexp: repcnt += 2 * cnt; break;
     case Aprmlst:
-    case Astmts: repcnt += cnt; break;
+    case Astmtlst: repcnt += cnt; break;
     default: break;
     }
     ndpart[t].nel = cnt;
@@ -901,6 +941,9 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   ndpart[Aasgnst].siz = sizeof(struct asgnst);
 
   ndpart[Ablk].siz = sizeof(struct blk);
+
+  ndpart[Aif].siz = sizeof(struct aif);
+
   ndpart[Awhile].siz = sizeof(struct witer);
 
   ndpart[Afndef].siz = sizeof(struct fndef);
@@ -908,7 +951,7 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
   ndpart[Arexp].siz = sizeof(struct rexp);
   ndpart[Aprmlst].siz = sizeof(struct prmlst);
-  ndpart[Astmts].siz = sizeof(struct stmtlst);
+  ndpart[Astmtlst].siz = sizeof(struct stmtlst);
 
   void *ndbas = allocset(ndpart,Acount,Mnofil,"ast tree",nextcnt);
 
@@ -927,6 +970,8 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
   struct blk *blkp,*blks = ndpart[Ablk].ptr;
 
+  struct aif *ifp,*ifs = ndpart[Aif].ptr;
+
   struct witer *witerp,*witers = ndpart[Awhile].ptr;
 
   struct fndef *fndefp,*fndefs = ndpart[Afndef].ptr;
@@ -934,16 +979,16 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
   struct rexp *rexpp,*rexps = ndpart[Arexp].ptr;
   struct prmlst *prmlp,*prmls = ndpart[Aprmlst].ptr;
-  struct stmtlst *stmtlp,*stmtls = ndpart[Astmts].ptr;
+  struct stmtlst *stmtlp,*stmtls = ndpart[Astmtlst].ptr;
 
-  struct pexp *pexpp,*pexps = alloc(npexp,struct pexp,Mnofil,"ast pexp",nextcnt);
-  struct bexp *bexpp,*bexps = alloc(nbexp + npexp,struct bexp,Mnofil,"ast bexp",nextcnt);
+  struct pexp *pexpp,*pexps = alloc(npexp,struct pexp,Mnofil | Mo_ok0,"ast pexp",nextcnt);
+  struct bexp *bexpp,*bexps = alloc(nbexp + npexp,struct bexp,Mnofil | Mo_ok0,"ast bexp",nextcnt);
 
   ub4 *rep,*repool = alloc(repcnt,ub4,Mnofil | Mo_ok0,"ast rep",nextcnt);
 
   ub4 *idfpos = alloc(nid,ub4,Mnofil | Mo_ok0,"ast id",nextcnt);
 
-  memcpy(ap->ndcnts,ndcnts,Acount * ub4siz);
+  memcpy(ap->ndcnts,ndcnts,sizeof ap->ndcnts);
 
   ap->gens = gens;
   ap->nhs = nhs;
@@ -976,12 +1021,14 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   ap->vars = vars;
 
   ap->nid = nid;
+  ap->uidcnt = uidcnt;
+  ap->aidcnt = aidcnt;
 
   ub2 hiblklvl = sa->hiblklvl;
 
+  ub4 napos0,napos = 0;
   ub4 lfargs[Nodarg];
 
-  rp = rpp;
   ai = 0;
 
   do {
@@ -990,8 +1037,10 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     ve = rp->ve;
 
     am = rp->amask;
+    napos0 = rp->ai;
 
     info("ni %u lvl %u ve %u args %x",rni,rp->lvl,ve,am);
+    if (napos != napos0) ice(0,0,"nd %u napos %u vs %u",rni,napos,napos0);
 
     gi = rp->ni;
     nh = nhs[gi];
@@ -1002,10 +1051,9 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     ni = nh & Atymsk;
 
     ac = 0;
-    a0 = args[0];
-    a1 = args[1];
+    a0 = args[napos] & hi56;
+    a1 = args[napos+1] & hi56;
     a0h = nhs[a0];
-    if ( (a0h >> Atybit) < Aleaf) lfargs[ac++] = a0;
     ainc = 2;
 
     switch (t) {
@@ -1018,15 +1066,21 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     case Aflit:
     case Aslit:
     case Ailits:
-    case Ailitns: break;
+    case Ailitns: lfargs[ac++] = a0; break;
 
     case Atru:
     case Afal:
-    case Akwd:   break;
+    case Akwd:
 
-    case Aop:    break;
+    case Aop:   break;
 
     // exp nodes
+    case Asubscr:
+    break;
+
+    case Agrpexp:
+    break;
+
     case Apexp:
       a1h = nhs[a1];
       pexpp = pexps + ni;
@@ -1061,13 +1115,23 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
       ainc = 1;
     break;
 
+    case Aif:
+      ifp = ifs + ni;
+      ifp->e = a0;
+      ifp->tb = a1;
+      if (am & 4) {
+        ifp->fb = args[napos+2] & hi56;
+        ainc = 3;
+      }
+    break;
+
     // iters
     case Awhile:
       witerp = witers + ni;
       witerp->e = a0;
       witerp->tb = a1;
       if (am & 4) {
-        witerp->fb = args[2];
+        witerp->fb = args[napos+2] & hi56;
         ainc = 3;
       }
     break;
@@ -1076,7 +1140,7 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
      fndefp = fndefs + ni;
      fndefp->id = a0;
      fndefp->plst = a1;
-     fndefp->blk = args[2];
+     fndefp->blk = args[napos+2] & hi56;
    break;
 
    case Aparam:
@@ -1086,17 +1150,23 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
        prmp->t = a1;
      } else ainc = 1;
      if (am & 4) {
-       prmp->def = args[2];
+       prmp->def = args[napos+2] & hi56;
        ainc++;
      }
     break;
 
+    case Aexpst:
+    break;
+
+    case Astmt:
+    break;
+
     // lists
     case Arexp: // a + b + ...
-      cnt = *args++;
+      cnt = am;
 
       if (cnt == 2) { // a + b
-        lnn = *args++;
+        lnn = a0;
         lnh = nhs[lnn];
         lt = lnh >> Atybit;
         li = lnh & Atymsk;
@@ -1104,7 +1174,7 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
         pexpp = pexps + li;
         bop = pexpp->op;
 
-        rnn = *args++;
+        rnn = a1;
         rnh = nhs[rnn];
         rt = rnh >> Atybit;
         ri = rnh & Atymsk;
@@ -1131,23 +1201,22 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
       }
     break;
 
-    case Aprmlst:   cnt = *args++;
-                    prmlp = prmls + ni;
-                    prmlp->pos = repos;
-                    prmlp->cnt = cnt;
-                    memcpy(repool + repos,args,cnt * 4);
-                    repos += cnt;
-                    ainc = cnt;
+    case Aprmlst: cnt = am;
+                  prmlp = prmls + ni;
+                  prmlp->pos = repos;
+                  prmlp->cnt = cnt;
+                  memcpy(repool + repos,args,cnt * 4);
+                  repos += cnt;
+                  ainc = cnt;
     break;
 
-    case Astmts:
-      cnt = *args++;
+    case Astmtlst:
+      cnt = am;
       if (cnt == 0) ice(0,0,"node %u empty stmt list",gi);
       stmtlp = stmtls + ni;
       stmtlp->cnt = cnt;
       stmtlp->pos = repos;
       if (cnt == 1) {
-        a0 = *args;
         a0h = nhs[a0];
         t0 = a0h >> Atybit;
         ni0 = a0h & Atymsk;
@@ -1162,7 +1231,7 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
     case Acount: goto end;
     }
-    args += ainc;
+    napos += ainc;
 
     for (la = 0; la < ac; la++) { // handle leaf args
       a0 = lfargs[la];
@@ -1171,11 +1240,14 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
       ni0 = a0h & Atymsk;
       atr = (a0h >> Aopbit) & Aopmsk;
 
-      if (t0 <= Aval) val = vals[vi++];
-
+      if (t0 <= Aval) {
+        if (vi >= valcnt) ice(0,0,"out of range var %u",vi);
+        val = vals[vi++];
+      }
       switch (t0) {
       case Aid:
         idp = ids + ni0;
+        info("id %u",ni0);
         idp->id = val & hi32;
         idfpos[ni0] = val >> 32;
       break;
@@ -1225,12 +1297,27 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   end:
 // ---
 
-  ap->root = nstmtlst - 1;
+  acnt2 = args - sa->args;
+  if (acnt2 != argcnt) ice(0,0,"argcnt %u vs %u",acnt2,argcnt);
+
+  ap->root = aidcnt - 2;
   ap->histlstsiz = histlstsiz;
+
+  afree(rpp,"syn nodes",nextcnt);
+  afree(sa->args,"syn args",nextcnt);
 
   afree(pexps,"ast pexp",nextcnt);
 
+  timeit(&T1,"ast build");
+
   ub4 *seqs = process(ap,emit);
+
+  timeit(&T1,"ast process");
+
+  timeit(&T0,"ast");
+
+  if (emit == 0) return ap;
+
   ub4 pos=0,blen = 4096;
   char buf[4096];
   ub2 lvl=0;
@@ -1242,12 +1329,13 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   ub1 pas;
   enum Astyp et;
 
-  if (emit == 0) return ap;
+  msglog(name,"ast","ast");
 
   vi = 0;
   lvl = 0;
   do {
     x4 = seqs[vi++];
+    if (x4 == hi32) break;
     nn = x4 & hi28;
     pas = x4 >> 28;
 
@@ -1257,7 +1345,7 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     genp = gens + nn;
 
     if (pas == 0) {
-      pos = mysnprintf(buf,0,blen,"%3u %3u %u %*s %-6s ",nn,ni,pas,lvl," ",atynam(t));
+      pos = mysnprintf(buf,0,blen,"%3u %3u %u %*s %-6s`z ",nn,ni,pas,lvl," ",atynam(t));
     } else continue;
 
     switch(t) {
@@ -1300,6 +1388,12 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     case Aop: break;
 
     // expressions
+    case Asubscr:
+    break;
+
+    case Agrpexp:
+    break;
+
     case Auexp:
       uexpp = uexps + ni;
       enn = uexpp->e;
@@ -1344,6 +1438,9 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
       info("blk %u",nn);
     break;
 
+    case Aif:
+    break;
+
     case Awhile:
       witerp = witers + ni;
     break;
@@ -1353,6 +1450,12 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
     case Afndef:
       fndefp = fndefs + ni;
+    break;
+
+    case Aexpst:
+    break;
+
+    case Astmt:
     break;
 
     case Arexp:
@@ -1366,35 +1469,25 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     break;
 
     // lists
-    case Astmts:
+    case Astmtlst:
       stmtlp = stmtls + ni;
       cnt = stmtlp->cnt;
       pos = stmtlp->pos;
 
       break;
 
-    case Acount: return ap;
+    case Acount: goto emitend;
     } // switch (typ)
 
   } while (1);
+
+emitend:
+
+  msglog(nil,nil,nil);
+
+  afree(seqs,"ast emit",nextcnt);
 
 //  if (globs.runast) runast(ap,emit);
 
   return ap;
 }
-
-enum Astyp prd2nod[Pcount] = {
-  [Ppexp]   = Apexp,
-  [Puexp_0]  = Auexp,
-  [Puexp_1]  = Auexp,
-//  [Pasexp]  = Aaexp,
-  [Pblock]  = Ablk,
-  [Pwhile]  = Awhile,
-  [Pfndef]  = Afndef,
-  [Pparam]  = Aparam,
-  [Prexp]   = Arexp,
-  [Pgrpexp] = Apexp,
-  [Pprmlst] = Aprmlst,
-  [Pasgnst] = Aasgnst,
-  [Pstmt_0] = Astmts
-};

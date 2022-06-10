@@ -287,8 +287,10 @@ ub4 myvsnprint(char *dst,ub4 pos,ub4 len,const char *fmt,va_list ap)
   ub4 n = 0;
   ub2 wid;
   ub4 prec;
+  ub2 ncnv=0,cnvlim;
   enum Lenmod lenmod;
   enum Spec spec;
+
   unsigned int uval=0,*puval,uintwid = sizeof(int) * 8 - 1;
   unsigned long ulval=0,*pulval,ulongwid = sizeof(long) * 8 - 1;
   unsigned long long ullval=0,*pullval;
@@ -300,6 +302,7 @@ ub4 myvsnprint(char *dst,ub4 pos,ub4 len,const char *fmt,va_list ap)
   long double fldval=0;
   char *pcval=nil,*pcend;
   void *vpval=nil;
+
   char c,c1,c2=0;
   // int fpclass;
   char pad,signch,hexch=0,expch=0,endc=0;
@@ -312,7 +315,13 @@ ub4 myvsnprint(char *dst,ub4 pos,ub4 len,const char *fmt,va_list ap)
 
   sassert((ub1)Long > (ub1)Speccnt,"len mods need to be mergable with specs");
 
+  if (pos > hi28) {
+    cnvlim = (pos >> 28);
+    pos &= hi28;
+  } else cnvlim = hi16;
+
   if (pos >= len) return 0;
+
   ulval = (unsigned long)p;
   if (ulval == 0) p = "(nil)";
   else if (ulval < 4096) p = "(int)";
@@ -344,6 +353,8 @@ ub4 myvsnprint(char *dst,ub4 pos,ub4 len,const char *fmt,va_list ap)
     // all conversions
     if (c1 == '%') {
       if (*p == '%') { p++; dst[n++] = '%'; continue; }
+
+      if (ncnv++ > cnvlim) break;
 
       wid = 0; pad = ' ';
       prec = hi32;
@@ -630,17 +641,17 @@ ub4 myvsnprint(char *dst,ub4 pos,ub4 len,const char *fmt,va_list ap)
      case String:
      case String|Long:
        if (wid == 0) {
-         while (prec && *pcval != endc) { dst[n++] = *pcval++; prec--; }
+         while (prec && *pcval && *pcval != endc) { dst[n++] = *pcval++; prec--; }
          if ( (flags & Plural) && lastone == 0) dst[n++] = 's';
        } else if (flags & Padleft) {
          pcend = pcval;
-         while (prec-- && *pcend != endc) dst[n++] = *pcend++;
+         while (prec-- && *pcend && *pcend != endc) dst[n++] = *pcend++;
          slen = (ub4)(pcend - pcval);
          wid = min(wid,len - n - slen);
          if (wid > slen) { memset(dst+n,' ',wid-slen); n += wid - slen; }
        } else {
          pcend = pcval;
-         while (prec-- && *pcend != endc) pcend++;
+         while (prec-- && *pcend && *pcend != endc) pcend++;
          slen = (ub4)(pcend - pcval);
          wid = min(wid,(ub2)(len - n - slen));
          if (wid > slen) { memset(dst+n,' ',wid-slen); n += wid - slen; }
@@ -777,7 +788,7 @@ ub4 __attribute__ ((format (printf,4,5))) mysnprintf(char *dst,ub4 pos,ub4 len,c
   va_list ap;
   ub4 n;
 
-  if (pos >= len) return 0;
+  if ( (pos & hi28) >= len) return 0;
   va_start(ap, fmt);
   n = myvsnprint(dst,pos,len,fmt,ap);
   va_end(ap);

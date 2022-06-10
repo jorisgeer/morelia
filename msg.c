@@ -337,7 +337,7 @@ void msglog(cchar *fnam,cchar *fext,cchar *desc)
   logfd = oscreate(path);
   if (logfd == -1) { oserror("cannot create %s: %m",path); return; }
   orgopts = msgopts;
-  x = (ub1)msgopts & ~ (ub1)(Msg_shcoord|Msg_tim);
+  x = (ub1)msgopts & ~ (ub1)(Msg_shcoord|Msg_tim|Msg_fno);
   msgopts = (enum Msgopts)x;
   info("%s - intermediate %s code dump\n",path,desc);
 }
@@ -596,6 +596,7 @@ Noret void __attribute__ ((format (printf,4,5))) fatalfln(ub4 fln,ub4 fln2,ub4 f
 {
   va_list ap;
 
+  msglog(nil,nil,nil);
   msg_wrfln(fln2);
 
   va_start(ap, fmt);
@@ -608,6 +609,7 @@ Noret void __attribute__ ((format (printf,4,5))) icefln(ub4 fln,ub4 fln2,ub4 fpo
 {
   va_list ap;
 
+  msglog(nil,nil,nil);
   msg_wrfln(fln2);
 
   va_start(ap, fmt);
