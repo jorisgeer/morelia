@@ -37,6 +37,7 @@
 static ub4 msgfile = Shsrc_ast;
 #include "msg.h"
 
+#include "tok.h"
 #include "lexsyn.h"
 
 #include "syndef.h"
@@ -149,6 +150,25 @@ static void precexp(struct ast *ap,struct rexp *rxp,ub4 *ops,ub4 *src,ub2 n)
 
   rxp->n = vi;
   rxp->hit = hit;
+}
+
+static cchar *tknam(enum token tk)
+{
+  ub2 len;
+  ub1 hc;
+  char *p,*q;
+  static char basbuf[8 * 32];
+  char *buf;
+  static ub2 bufno;
+
+  buf = basbuf + bufno * 32;
+  bufno = (bufno + 1) & 7;
+
+  if (tk >= t99_count) return "Tinv";
+  memcpy(buf,tkwnampool + tkwnamposs[tk],len=tkwnamlens[tk]);
+  buf[len] = 0;
+  buf[len+1] = ' ';
+  return buf;
 }
 
 // todo placeholders
@@ -273,6 +293,7 @@ static ub4 *process(struct ast *ap,bool emit)
   ub4 x4;
   double fval,fval1,fval2;
   enum Bop op;
+  enum token tk;
 
   ub4 head,pc0,pc = 0;
   ub1 reg,reg1,breg,res;
@@ -790,8 +811,14 @@ static ub4 *process(struct ast *ap,bool emit)
         switch (nt) {
           case Ailit: case Ailits:
           case Aflit:
-          case Aslit:
-          case Akwd: break;
+          case Aslit: break;
+          case Akwd:
+            tk = nh & Atymsk;
+            switch(tk) {
+            case tbreak: break;
+            default: break;
+            }
+            break;
           default: psh(nn,0);
         }
       } while (cnt);
@@ -948,6 +975,8 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
   ndpart[Afndef].siz = sizeof(struct fndef);
   ndpart[Aparam].siz = sizeof(struct param);
+
+  ndpart[Astmt].siz = sizeof(struct stmt);
 
   ndpart[Arexp].siz = sizeof(struct rexp);
   ndpart[Aprmlst].siz = sizeof(struct prmlst);
@@ -1383,7 +1412,13 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     case Atru:
     case Afal: break;
 
-    case Akwd: break;
+    case Akwd:
+      switch(ni) {
+      case tbreak:
+      case tcontinue: info("%s",tknam(ni)); break;
+      default: break;
+      }
+     break;
 
     case Aop: break;
 

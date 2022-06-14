@@ -137,10 +137,10 @@ static ub2    tkngrps[Tkgrp];
 static ub1    hitkgrp;
 
 #define Nkwd 128
-static ub2 nkwd,ntkwd;
+static ub2 nkwd,ntkwd,nkwd_mrg=hi16;
 static cchar *kwds[Nkwd];
 static ub1 kwlens[Nkwd];
-static ub1 kwgrps[Nkwd];
+// static ub1 kwgrps[Nkwd];
 static ub1 kwlnos[Nkwd];
 static ub1 havekwlens[Kwnamlen];
 
@@ -557,7 +557,7 @@ static void addkwd1(ub2 ln,cchar *name,ub1 len,ub1 grp)
   kwds[pos] = name;
   kwlnos[pos] = ln;
   kwlens[pos] = len;
-  kwgrps[pos] = grp;
+//  kwgrps[pos] = grp;
   if (len > hikwlen) hikwlen = len;
   if (len < lokwlen) lokwlen = len;
   havekwlens[len]++;
@@ -581,6 +581,8 @@ static void addkwd(ub2 ln,cchar *name,ub2 len,ub1 grp)
     return;
   } else if (eq == name || eq == name + len - 1) serror(ln|Lno,"invalid kwd '%.*s'",len,name);
 
+  // merged
+  if (nkwd_mrg == hi16) nkwd_mrg = nkwd;
   n = name; ll = eq - name;
   addkwd1(ln,eq+1,len - ll - 1,grp);
   while (ll) {
@@ -2522,12 +2524,13 @@ static void wrenum(struct bufile *fp,ub1 *lens,cchar **nams,char *name,ub2 cnt,u
   sb4 pad = -upad-1;
   cchar *nam;
 
+  pad = min(pad,-8);
   if (cnt == 0) {
     myfprintf(fp,"enum %s%s { %c99_count = 1 };\n\n",packed8,name,*name);
     return;
   }
 
-  myfprintf(fp,"enum %s%s { // gen.%u\n ",packed8,name,__LINE__);
+  myfprintf(fp,"enum %s%s {\n ",packed8,name);
   for (n = 0; n < cnt; n++) {
     nam = nams[n];
     if (strcmp(nam,"false") == 0) nam = "fals";
@@ -2645,18 +2648,14 @@ static int wrfile(void)
       len = kwlens[tk];
       nam = kwds[tk];
       bpos += mysnprintf(buf,bpos,blen,"T%*.*s = %2u,%s",tknampad,len,nam,tk,(tk & 7) == 7 ? "\n  " : " ");
+      if (tk == nkwd_mrg) bpos += mysnprintf(buf,bpos,blen,"\n  T%*s = %2u, ",tknampad,"99_mrg",tk);
       if (len == eoflen && memeq(nam,speceof,eoflen)) {
         bpos += mysnprintf(buf,bpos,blen,"T%*s = %2u, ",tknampad,"99_eof",tk);
         haveeof=1;
       }
     }
-
-    if (nkwd < ntkwd) {
-      bpos += mysnprintf(buf,bpos,blen,"\n  T%*s = %2u,\n\n  ",tknampad,"99_kwd",nkwd);
-    } else {
-      bpos += mysnprintf(buf,bpos,blen,"\n  T%*s = %2u,\n  ",tknampad,"99_kwd",nkwd);
-//      bpos += mysnprintf(buf,bpos,blen,"\n  Tt%*s = %2u,\n\n  ",tknampad+1,"99_kwd",nkwd);
-    }
+    if (nkwd_mrg == hi16) bpos += mysnprintf(buf,bpos,blen,"\n  T%*s = %2u, ",tknampad,"99_mrg",nkwd);
+    bpos += mysnprintf(buf,bpos,blen,"\n  T%*s = %2u,\n\n  ",tknampad,"99_kwd",nkwd);
 
     for (tk = 0; tk < nltok; tk++) {
       len = toklens[tk];
@@ -2817,18 +2816,17 @@ static int wrfile(void)
           if (i) myfputc(&lhfp,',');
           myfprintf(&lhfp,"%u",tkwdmap[i]);
         }
-        myfprintf(&lhfp," };\n\n");
-        myfprintf(&lhfp,"#define setkwd(T,t,k) T = kwhshmap[k]; t = k\n\n");
+        myfprintf(&lhfp," }; // token to Token\n\n");
 
-      } else {
-        myfprintf(&lhfp,"#define setkwd(T,t,k) T = k\n\n");
       }
+#if 0
       myfprintf(&lhfp,"static const ub1 kwgrps[%u] = { ",nkwd);
         for (i = 0; i < nkwd; i++) {
           if (i) myfputc(&lhfp,',');
           myfprintf(&lhfp,"%u",kwgrps[i]);
         }
         myfprintf(&lhfp," };\n\n");
+#endif
     }
     if (nblt) {
       myfprintf(&lhfp,"#define Bltcnt %u\n",nblt);

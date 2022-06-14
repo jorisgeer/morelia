@@ -90,9 +90,8 @@ struct rule {
   ub1 altcnt;
   ub1 maxlen;
   ub1 lotcnt,hitcnt,hisi;
-  bool emitstart;
   ub1 rulrep;
-
+  bool havearg;
   ub1 mrgset;
 
   ub2 lno;
@@ -133,8 +132,11 @@ struct rule {
   cchar *prdnam[Nalt];
   ub1 prdnlen[Nalt];
 
+  ub1 argcnts[Nalt];
+
   ub1 alts[Nalt * Altlen];
   ub1 ctls[Nalt * Altlen];
+  ub1 args[Nalt * Altlen];
 };
 
 static struct rule rules[Nnterm];
@@ -194,7 +196,7 @@ static ub8 laseconds[Lacnt * T99_count * Laset];
 static ub1 higrpdif;
 static ub4 higrpfln;
 
-static ub2 prdid_blk;
+static ub2 prdid_blk = hi16;
 
 static ub4 specdmin;
 static ub4 specdtim;
@@ -231,7 +233,11 @@ static cchar *tknam2(enum Token tk,bool hr)
   return buf;
 }
 
-static bool tkdefarg(enum Token t) { return (t >= T99_kwd && t <= T0grp); }
+static bool tkdefarg(enum Token t) {
+  if (t >= T99_kwd && t <= T0grp) return 1;
+  else if (t < T99_kwd && t >= T99_mrg) return 1;
+  else return 0;
+}
 
 static cchar *tknam(enum Token tk) { return  tknam2(tk,0); }
 
@@ -918,17 +924,19 @@ static int mkfirstsec(void)
 
 static ub2 tkrefs[T99_count];
 
-static bool doentry(struct rule *rp,struct sentry *ep,ub1 *sp,ub1 *cp,ub2 len,bool need)
+static bool doentry(struct rule *rp,struct sentry *ep,ub1 *sp,ub1 *cp,ub1 *ap,ub2 len,bool need)
 {
   ub2 si = 0;
   ub1 s,*ds,*dc;
   ub1 z,repc;
+  ub1 a;
   bool s0=0,islp;
   struct rule *rxp;
   ub4 lnx = ep->lno|Lno;
 
   s = sp[0];
   z = cp[0];
+  a = ap[0];
   repc = z & Crepmask;
 
   if (s >= T99_count && s < T99_count + rulcnt) need = 1;
@@ -938,6 +946,7 @@ static bool doentry(struct rule *rp,struct sentry *ep,ub1 *sp,ub1 *cp,ub2 len,bo
     len--;
     sp++;
     cp++;
+    ap++;
   }
 
   ds = ep->syms;
@@ -947,6 +956,7 @@ static bool doentry(struct rule *rp,struct sentry *ep,ub1 *sp,ub1 *cp,ub2 len,bo
   for (si = 0; si < len; si++) {
     s = sp[si];
     z = cp[si];
+    a = ap[si] & 0xf;
     islp = (z & Crepmask) == Creplp;
     if (islp && len > 1 && si < len-1) serror(lnx,"rule %s: duplicate end of rep",rp->name);
     if (s >= T99_count && s < T99_count + rulcnt) {
@@ -956,6 +966,7 @@ static bool doentry(struct rule *rp,struct sentry *ep,ub1 *sp,ub1 *cp,ub2 len,bo
       s = rul2nrul[s - T99_count] + T99_count;
     }
 //    svrb2(rp->lno|Lno,rp->id,s,"%u si %u z %x",s,si,z);
+    if (a != 0xf) { z |= (a+1); sinfo2(lnx,rp->id,s,"arg %u",a); }
     ds[si] = s;
     dc[si] = z;
   }
@@ -975,7 +986,7 @@ static ub1 dir2prdnams[Dirprd * Dirprdnam];
 static ub1 dir1prdnlens[Dirprd];
 static ub1 dir2prdnlens[Dirprd];
 
-static ub2 addirtok(enum Token tk,ub2 rul,ub2 alt,enum Ctl arg)
+static ub2 addirtok(enum Token tk,ub2 rul,ub2 alt,bool arg)
 {
   ub2 ndx = rul * Nalt + alt;
   ub2 d = dirtoks[ndx];
@@ -1039,21 +1050,25 @@ static int mktables(void)
   struct sentry *ep;
   ub2 se=0,ve=0,ose,nse;
   enum Token tk;
-  enum Ctl repc,idc,arg;
+  enum Ctl repc,idc;
+  ub1 arg,hiarg=0;
   enum Satrs atr;
   ub1 z,*cp;
+  ub1 *ap;
   ub2 x2,*stp = prdsel;
   ub2 rx,tr,r,nr=0,ta;
-  ub2 acnt,slen,a;
+  ub2 acnt,slen,a,aa;
   ub1 s,*sp;
   ub2 cnt,si,sinc,i,n;
-  ub2 lno;
+  ub2 lno,hiargln = 0;
   ub4 lnx;
   ub4 mrgbit;
   ub1 laid,laid2;
   ub1 lasn;
   ub2 lasi;
-  ub1 dola;
+  bool dola;
+  bool doarg;
+  ub1 narg;
   ub4 *xfp;
   ub8 sec,*lasp,*lasp2,*rsp,*rsp0,*xsp;
   bool isrep,nosingle;
@@ -1100,12 +1115,16 @@ static int mktables(void)
 
     for (a = 0; a < acnt; a++) { // each alt
       ep = syntab + se;
-      sp = rp->alts + a * Altlen;
-      cp = rp->ctls + a * Altlen;
+      aa = a * Altlen;
+      sp = rp->alts + aa;
+      cp = rp->ctls + aa;
+      ap = rp->args + aa;
+
       slen = rp->altlens[a];
       lno = rp->lnos[a];
       lnx = lno|Lno;
       dola = rp->dolas[a];
+      narg = rp->argcnts[a];
 
       rsp0 = rp->second + a * Nsi * T99_count;
 
@@ -1116,16 +1135,16 @@ static int mktables(void)
 
       if (se + 1 >= Stablen) serror2(lnx,r,T99_count,"syntab exceeds max len %u",Stablen);
 
+      if (narg && rp->prdnlen[a] == 0) serror2(lnx,r,T99_count,"alt %u has %u args but no name",a,narg);
+
      si = 0;
      while (si < slen) {
-
       rsp = rsp0 + si * T99_count;
 
       s = sp[si];
       z = cp[si];
       repc = z & Crepmask;
       idc = z & Cidmask;
-      arg = z & Cargmask;
 
       sinc = 1;
       isrep = 0;
@@ -1171,7 +1190,6 @@ static int mktables(void)
         tks[cnt++] = s;
 
       } else { // nonterm
-
         havent = 1;
         rx = s - T99_count;
         rxp = rules + rx;
@@ -1191,6 +1209,8 @@ static int mktables(void)
         if (cnt == 0) serror2(lnx,r,T99_count,"no first for alt %u rule %s",a,rxp->name);
       }
 
+      doarg = (ap[si] & 0xf) != 0xf;
+
       // fill prdsel
       haveve = 0;
       for (i = 0; i < cnt; i++) {
@@ -1209,13 +1229,13 @@ static int mktables(void)
           xsp = rxp->second0;
           svrb2(lnx,tr,tk,"i %u rule %s",i,rp->name);
           sec = xsp[tk];
-          nse = addirtok(tk,tr,ta,arg);
+          nse = addirtok(tk,tr,ta,doarg);
           svrb2(lnx,r,tk,"i %u nse %u sec %s",i,nse,printsec(sec,buf,blen));
           dircnt++;
 
         } else if (ena_benambi && tnc == 2 && trn > 2 && ose == Invpos) { // dirtok + benamb
           rxp = rules + tr;
-          nse = addirtok(tk,tr,ta,arg);
+          nse = addirtok(tk,tr,ta,doarg);
           if (laseq + 1 >= Lacnt) serror2(lnx,r,tk,"exceeding %u lookahead sets",Lacnt);
           laid = laseq++;
           stp[tk] = ose = laid + Laid;
@@ -1306,7 +1326,7 @@ static int mktables(void)
           ep->alt = a;
           ep->s0 = sp[0];
           ep->ve0 = ve;
-          if (doentry(rp,ep,sp,cp,slen,nosingle)) atr = Sa_s0 | (slen - 1);
+          if (doentry(rp,ep,sp,cp,ap,slen,nosingle)) atr = Sa_s0 | (slen - 1);
         } else if (si > 3) serror2(lnx,r,0xff,"si %u above %u",si,3);
         vprdmap[ve] = se;
         // ep->ve1 = ve;
@@ -1642,6 +1662,90 @@ static void addrules(cchar *src,ub2 n,ub2 ln)
   vrb("%u rules",rulcnt);
 }
 
+static bool doargs(void)
+{
+  struct rule *rp,*rxp;
+  enum Token tk;
+  ub1 hiarg=0;
+  ub1 z,*cp;
+  ub1 arg,*ap;
+  ub2 rx,r;
+  ub2 acnt,slen,a,aa;
+  ub1 s,*sp;
+  ub2 si,i,n;
+  ub2 lno,hiargln = 0;
+  ub4 lnx;
+  bool doarg,change=0;
+  ub1 narg;
+  static ub2 iter;
+
+  info("doargs iter %u",iter++);
+
+  for (r = 0; r < rulcnt; r++) { // each rule
+    rp = rules + r;
+    if (rp->ref == rulcnt) continue;
+
+    lno = rp->lno;
+    lnx = lno|Lno;
+    acnt = rp->altcnt;
+
+    for (a = 0; a < acnt; a++) { // each alt
+      aa = a * Altlen;
+      sp = rp->alts + aa;
+      cp = rp->ctls + aa;
+      ap = rp->args + aa;
+
+      slen = rp->altlens[a];
+      lno = rp->lnos[a];
+      lnx = lno|Lno;
+
+      narg = 0;
+
+     for (si = 0; si < slen; si++) {
+      s = sp[si];
+      z = cp[si];
+      arg = ap[si];
+      if (arg & 0x80) { // manual assign
+        arg &= 0x7f;
+        if (arg == 0xf) continue;
+        if (arg < narg) serror2(lnx,r,s,"arg %u already assigned",arg);
+        narg = arg + 1;
+        continue;
+      }
+
+      doarg = 0;
+      if (s >= T99_count + rulcnt) { // merged tokens
+        doarg = 1;
+      } else if (s < T99_count) { // regular token
+        if (tkdefarg(s)) { doarg = 1; sinfo2(lnx,r,s,"def arg for %u",s); }
+      } else { // nonterm
+        rx = s - T99_count;
+        rxp = rules + rx;
+        if (rxp->havearg) { doarg = 1; svrb2(lnx,r,s,"rule arg for %u",s); }
+      }
+
+      if (doarg) {
+        ap[si] = narg++;
+        // sinfo2(lnx,r,s,"arg %u",ap[si]);
+      } else ap[si] = 0xf;
+      if (narg > Nodarg) serror2(lnx,r,0xff,"exceeding %u node args",Nodarg);
+     } // each symbol
+
+     if (rp->argcnts[a] != narg) change = 1;
+     rp->argcnts[a] = narg;
+     if (narg) {
+       if (rp->havearg == 0) change = 1;
+       rp->havearg = 1;
+     }
+     if (narg > hiarg) { hiarg = narg; hiargln = lno; }
+    } // each alt
+
+  } // each rule
+
+  if (change == 0 && hiarg) info("max %u args at ln %u",hiarg,hiargln);
+  return change;
+}
+
 static int rdspec(cchar *fname,ub1 *src)
 {
   enum Specstate nxst = Sout,st = Sout;
@@ -1655,6 +1759,7 @@ static int rdspec(cchar *fname,ub1 *src)
   struct rule *rp=nil,*rp2;
   ub1 s,*sp=nil,*sp2;
   ub1 z,repc,idc,*cp=nil,*cp2;
+  ub1 *ap=nil;
   ub1 optlvl=0;
   ub1 optpos[16];
   ub1 opos,grpdif;
@@ -1662,7 +1767,7 @@ static int rdspec(cchar *fname,ub1 *src)
   enum Specvar sv = Sv_count;
   ub2 c,c2,crep;
 
-  ub2 n = 0;
+  ub2 n = 0,nn;
   ub2 varnam0=0,varnam1=0,varval0=0,varval1,varlen=0;
   ub2 idnlen=0;
   ub2 slen=0;
@@ -1679,12 +1784,10 @@ static int rdspec(cchar *fname,ub1 *src)
   bool isrep0n,isrep1n;
   bool dorng=0;
   ub1  dola=0;
+  ub1 doarg;
+  bool change;
 
   ub2 prdid=hi16;
-
-  ub1 argn=0;
-  enum Ctl argc,hiarg=0;
-  ub2 hiargln=0;
 
   cchar *mrgnam,*nam;
 
@@ -1852,13 +1955,15 @@ static int rdspec(cchar *fname,ub1 *src)
     if (acur + 1 >= Nalt) serror(n,"exceeding %u alts",acur);
 
     symnam1 = 0;
-    sp = rp->alts + acur * Altlen;
-    cp = rp->ctls + acur * Altlen;
+    nn = acur * Altlen;
+    sp = rp->alts + nn;
+    cp = rp->ctls + nn;
+    ap = rp->args + nn;
+
     rp->lnos[acur] = lno;
     dsc = rp->desc + acur * Dsclen;
     dscpos = 0;
     scur = secur = 0;
-    argn = 0;
     optlvl = 0;
     mapped = 0;
     reptok = 0;
@@ -1959,28 +2064,20 @@ static int rdspec(cchar *fname,ub1 *src)
     repc = Crep11;
     isrep1n = 0;
     idc = 0;
-    argc = 0;
     sinc = optlvl ? 0 : 1;
     c2 = src[symnam1-1];
 
-    if (symlen > 1 && src[symnam1-1] == '`') { // annotations for auto args
-      argc = ++argn;
-      symlen--;
-      c2 = src[symnam0+symlen-1];
-    } else if (symlen > 2 && src[symnam1-2] == '`') { // annotations for args and typedef/id
-      hastidctl = 0;
+    if (symlen > 2 && src[symnam1-2] == '`') { // annotations for args and typedef/id
       switch (c2) {
-//     case '>': idc = Cidsc1; symlen -= 2; break;
-//     case '<': idc = Cidsc0; symlen -= 2; break;
-      case '=': idc = Ciddef; symlen -= 2; break;
-      case '-': idc = Cidref; symlen -= 2; break;
-
-      case '0': argc = ++argn; break;
-      case '1': case '2': case '3': case '4': case '5': case '6':
-        argc = c2 - '0'; argn = argc;
-        break;
+//     case '>': idc = Cidsc1; break;
+//     case '<': idc = Cidsc0; break;
+      case '=': idc = Ciddef; break;
+      case '~': idc = Cidref; break;
+      case '0': ap[scur] = 0x8f; break; // no arg
+      case '1': case '2': case '3': case '4': ap[scur] = (c2 - '0') | 0x80;  break; // fixed arg
       default: serror2(n,nt0,0xff,"unknown ctl char '%s'",chprint(c2));
       }
+      symlen -= 2;
       if (idc) {
         if (enatidctl) hastidctl = 1;
         else serror2(n,nt0,0xff,"tid ctl '%c' disabled",c);
@@ -2026,7 +2123,6 @@ static int rdspec(cchar *fname,ub1 *src)
 
         if (tmpbits[tk]) serror(n,"duplicate token %s",tknam(tk));
         tmpbits[tk] = 1;
-        if (tkdefarg(tk) && argc == 0) argc = ++argn;
         if (pos < 8) {
           nam = tknam(tk);
           buf[pos++] = upcase(*nam); buf[pos++] = nam[1];
@@ -2061,7 +2157,6 @@ static int rdspec(cchar *fname,ub1 *src)
       if (tk == T99_count) serror2(n,nt0,0xff,"unknown token '%.*s'",symlen,src+symnam0);
       if (isrep0n && tk < T0grp) serror2(n,nt0,tk,"repetition '%c' on group 0 token",c2);
 
-      if (tkdefarg(tk) && argc == 0) argc = ++argn;
       s = tk;
       tkrefs[tk] = lno;
       dscpos += mysnprintf(dsc,dscpos,Dsclen,"%c%.16s",dola ? '?' : ' ',tknam2(tk,1));
@@ -2099,17 +2194,16 @@ static int rdspec(cchar *fname,ub1 *src)
 
     sp[scur] = s;
 
-    if (argn >= Nodarg) serror2(n,nt0,0xff,"exceeding %u node args",Nodarg);
-    if (argn > hiarg) { hiarg = argn; hiargln = lno; }
     if (reptok) {
       repc = Creplp;
     }
 
-    z = repc | idc | argc;
+    z = repc | idc;
     if (isrep1n) { //convert x+ into x x*
       sp[scur+1] = sp[scur] = s;
       cp[scur]   |= z;
       cp[scur+1] |= z;
+      ap[scur+1] = ap[scur];
       scur += 2;
       secur = 1;
     } else {
@@ -2124,10 +2218,6 @@ static int rdspec(cchar *fname,ub1 *src)
     if (scur > rp->maxlen) rp->maxlen = scur;
 
     if (crep != ' ') dsc[dscpos++] = crep;
-    if (argc) {
-      dsc[dscpos++] = '`';
-      dsc[dscpos++] = argc + '0';
-    }
 
     if (t == Cnl || t == Chsh) { // end of alt
       if (optlvl) serror(n,"unbalanced group at pos %u",optpos[optlvl-1]);
@@ -2158,15 +2248,12 @@ static int rdspec(cchar *fname,ub1 *src)
 
       for (a = 1; a < acur; a++) { // check dup
         sp2 = rp->alts + a * Altlen;
-        cp2 = rp->ctls + a * Altlen;
         slen = rp->altlens[a];
-        if (slen != scur) continue;
-        if (memeq(sp,sp2,slen) && memeq(cp,cp2,slen)) serror(n,"rule %s alt %u previously defined at line %u",rp->name,acur,rp->lnos[a]);
+        if (memeq(sp,sp2,min(slen,scur))) serror(n,"rule %s alt %u previously defined at line %u",rp->name,acur,rp->lnos[a]);
       }
 
       rp->altlens[acur] = scur;
       rp->altcnt = ++acur;
-      argn = 0;
     }
 
     switch(t) {
@@ -2285,8 +2372,6 @@ static int rdspec(cchar *fname,ub1 *src)
   startrule = nt;
   ntrefs[nt] = rules[nt].lno;
 
-  if (hiarg) info("max %u args at ln %u",hiarg,hiargln);
-
   if (hastidctl) infofln(FLN,"typedef / id ctl active");
 
 #if 1
@@ -2316,6 +2401,11 @@ static int rdspec(cchar *fname,ub1 *src)
     }
   }
   if (msgerrcnt()) return 1;
+
+  // args
+  do {
+    change = doargs();
+  } while (change);
 
   rp = rules + hint;
   info("max desc len %u at nterm %u.%u %.*s",dscmax,hint,hialt,rp->dsclen[hialt],rp->desc + hialt * Dsclen);
@@ -2533,7 +2623,7 @@ static void wrprd(struct bufile *fp,struct bufile *dfp)
     r8 = r << 8;
     pid = rp->prdid[a];
 
-    if (pid == prdid_blk) ve_blk = ve;
+    if (prdid_blk != hi16 && pid == prdid_blk) ve_blk = ve;
 
     // prod name
     pnam = prdnams + ve * Prdnam;
@@ -2565,7 +2655,7 @@ static void wrprd(struct bufile *fp,struct bufile *dfp)
       pos5 += mysnprintf(buf5,pos5,blen,",\n  ");
       pos6 += mysnprintf(buf6,pos6,blen,",\n  ");
     }
-    if (n && rp->rulrep == 0) {
+    if (n) {
       anam = rp->prdnam[a];
       pos5 += mysnprintf(buf5,pos5,blen,"[P%s]%*s = A%.*s",pnam,n > 12 ? 0 : n - 12," ",n,anam);
     } else {

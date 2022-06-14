@@ -122,6 +122,10 @@ struct witer {
   ub1 lvl;
 };
 
+struct stmt {
+  ub4 s;
+};
+
 struct rexp {
   ub4 pos;
   ub2 n;
