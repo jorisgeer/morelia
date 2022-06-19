@@ -854,16 +854,22 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   ub4 acnt2,argcnt = sa->argcnt;
   ub8 val=0,*restrict vals = sa->vals;
   ub4 vi=0,valcnt = sa->valcnt;
+  ub4 *tis = sa->tis;
+
+  const enum Token * restrict tks = lsp->toks;
+  const ub1 * restrict atrs   = lsp->atrs;
+  const ub4 * restrict fpos   = lsp->fpos;
+  ub4 fps=0;
+  ub4 ti;
 
   ub4 nvar,nuex,nbex;
   ub4 repos=0;
-  ub4 a=0,a0,a1,ni,ni0,i,ii,i0,ai;
-  ub4 fpos,fpos_ilit=0;
+  ub4 a=0,a0=0,a1=0,ni,ni0,i,ii,i0,ai;
+  ub4 fpos_ilit=0;
   ub2 dfp;
   ub4 bits=0;
   ub1 atr;
 
-  const ub8 *restrict tkbits = lsp->bits;
   cchar *name = lsp->name;
 
   ub2 am,ac,ainc,la;
@@ -1056,7 +1062,6 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   ub2 hiblklvl = sa->hiblklvl;
 
   ub4 napos0,napos = 0;
-  ub4 lfargs[Nodarg];
 
   ai = 0;
 
@@ -1066,10 +1071,8 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     ve = rp->ve;
 
     am = rp->amask;
-    napos0 = rp->ai;
 
     info("ni %u lvl %u ve %u args %x",rni,rp->lvl,ve,am);
-    if (napos != napos0) ice(0,0,"nd %u napos %u vs %u",rni,napos,napos0);
 
     gi = rp->ni;
     nh = nhs[gi];
@@ -1079,23 +1082,59 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
     ni = nh & Atymsk;
 
-    ac = 0;
-    a0 = args[napos] & hi56;
-    a1 = args[napos+1] & hi56;
-    a0h = nhs[a0];
-    ainc = 2;
+    if (t <= Aval) {
+      if (vi >= valcnt) ice(0,0,"out of range var %u",vi);
+      val = vals[vi++];
+      ainc = 0;
+      ti = tis[gi];
+      fps = fpos[ti];
+    } else {
+      ac = 0;
+      a0 = args[napos] & hi56;
+      a1 = args[napos+1] & hi56;
+      a0h = nhs[a0];
+      ainc = 2;
+    }
 
     switch (t) {
 
     // leaves
     case Aid:
-    case Avar:
+      idp = ids + ni;
+      info("id %u",ni);
+      idp->id = val & hi32;
+      idfpos[ni] = fps;
+      break;
+
+    case Avar: break;
+
     case Ailit:
+      ilitp = ilits + ni;
+      ilitp->val = val;
+    break;
+
     case Ailitn:
+      ilitnp = ilitns + ni;
+      ilitnp->val = val;
+    break;
+
     case Aflit:
+      flitp = flits + ni;
+      fval = (double)(val & hi56);
+      if (val & Bit63) fval = -fval;
+      fxs = val >> 62;
+      fxp = (val >> 55) & 0xff;
+      if (fxp == 1 && fxs == 0) fval *= 10;
+      else if (fxp) {
+        if (fxs) fxp = -fxp;
+        fval *= exp(10 * log(fxp));
+      }
+      flitp->val = fval;
+    break;
+
     case Aslit:
     case Ailits:
-    case Ailitns: lfargs[ac++] = a0; break;
+    case Ailitns: break;
 
     case Atru:
     case Afal:
@@ -1111,17 +1150,15 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     break;
 
     case Apexp:
-      a1h = nhs[a1];
       pexpp = pexps + ni;
       pexpp->e = a0;
-      pexpp->op = a1h >> Aopbit;
+      pexpp->op = a1 >> Aopbit;
     break;
 
     case Auexp:
       uexpp = uexps + ni;
       uexpp->e = a0;
-      a1h = nhs[a1];
-      uexpp->op = a1h >> Aopbit;
+      uexpp->op = a1 >> Aopbit;
     break;
 
     case Abexp: break;
@@ -1258,65 +1295,9 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
       if (cnt > histlstsiz) histlstsiz = cnt;
     break;
 
-    case Acount: goto end;
+    case Acount: goto end; // eof
     }
     napos += ainc;
-
-    for (la = 0; la < ac; la++) { // handle leaf args
-      a0 = lfargs[la];
-      a0h = nhs[a0];
-      t0 = a0h >> Atybit;
-      ni0 = a0h & Atymsk;
-      atr = (a0h >> Aopbit) & Aopmsk;
-
-      if (t0 <= Aval) {
-        if (vi >= valcnt) ice(0,0,"out of range var %u",vi);
-        val = vals[vi++];
-      }
-      switch (t0) {
-      case Aid:
-        idp = ids + ni0;
-        info("id %u",ni0);
-        idp->id = val & hi32;
-        idfpos[ni0] = val >> 32;
-      break;
-
-      case Ailit:
-        ilitp = ilits + ni;
-        ilitp->val = val;
-        break;
-
-      case Ailitn:
-        ilitnp = ilitns + ni;
-        ilitnp->val = val;
-        break;
-
-      case Aflit:
-        flitp = flits + ni;
-        fval = (double)(val & hi56);
-        if (val & Bit63) fval = -fval;
-        fxs = val >> 62;
-        fxp = (val >> 55) & 0xff;
-        if (fxp == 1 && fxs == 0) fval *= 10;
-        else if (fxp) {
-          if (fxs) fxp = -fxp;
-          fval *= exp(10 * log(fxp));
-        }
-        flitp->val = fval;
-        break;
-
-      case Aslit: // todo
-        break;
-
-      case Ailits:
-      case Ailitns:
-      break;
-
-      case Akwd: break;
-      default: break;
-
-    }
-  } // postprocess leaf args
 
     rni++;
     gi++;

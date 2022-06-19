@@ -30,29 +30,44 @@ start stmts
 table
 
 stmts
-  *stmt?` +; `stmt
+  *stmt +; `stmt
+
+stmt
+  expr `expst
+  If expr : block `if
+
+block
+  { stmts } `blk
+
+expr
+  Id `exp
+
+##
+
+stmts
+  *stmt? +; `stmt
 
 param
-  Id ?( ?( : expr` ?) = expr` ?)
+  Id ?( ?( : expr ?) = expr ?) `param
 
 prmlst
-  *param` +,
+  *param +,
 
 target
   ? Id
-  ? atom` [ pexp` ] `subscr
+  ? atom [ pexp ] `subscr
 
 stmt
-  ? target = expr` `asgnst
+  ? target = expr `asgnst
   ? expr `expst
-  Break`
-  If expr` : block` ?( Else : block` ?) `if
-  While expr` : block` ?( Else : block` ?) `while
-  Def Id ( prmlst` ) : block` `fndef
+  Break`1
+  If expr : block ?( Else : block ?) `if
+  While expr : block ?( Else : block ?) `while
+  Def Id ( prmlst ) : block `fndef
 
 block
-  { stmts` } `block=0
-  stmt` `blk-stmt
+  { stmts } `blk
+  stmt
 
 # --- expressions ---
 
@@ -66,11 +81,11 @@ atom
   ( expr? ) `grpexp
 
 uexp
-  Pm?` atom` `uexp
+  Pm? atom `uexp
 
 pexp # building block for binary exprs
-  +uexp` +(Pm|Op|Ast)` `pexp=1
+  +uexp +(Pm|Op|Ast)` `pexp=1
 
 expr
-  38 ? Id := expr` `asexp
-  ? pexp` `rexp
+  38 ? Id := expr `asexp
+  ? pexp `rexp

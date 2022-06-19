@@ -2735,19 +2735,19 @@ static int wrfile(void)
         spos += len;
       }
 
-      myfprintf(&sfp,"static const ub1 kwnamlens[%u] = { ",nkwd);
+      myfprintf(&sfp,"static const ub1  kwnamlens [%2u] = { ",nkwd);
       for (tk = 0; tk < nkwd; tk++) {
         if (tk) myfputc(&sfp,',');
         myfprintf(&sfp,"%-2u",kwlens[tk]);
       }
-      myfprintf(&sfp," };\n\n");
+      myfprintf(&sfp," };\n");
 
-      myfprintf(&sfp,"static const ub2 kwnamposs[%u] = { ",nkwd);
+      myfprintf(&sfp,"static const ub2  kwnamposs [%2u] = { ",nkwd);
       for (tk = 0; tk < nkwd; tk++) {
         if (tk) myfputc(&sfp,',');
-        myfprintf(&sfp,"%u",sposs[tk]);
+        myfprintf(&sfp,"%-2u",sposs[tk]);
       }
-      myfprintf(&sfp," };\n\n");
+      myfprintf(&sfp," };\n");
 
       myfprintf(&sfp,"static const char kwnampool[%u] = \"",spos);
       myfputs(&sfp,spool,spos);
@@ -3328,7 +3328,7 @@ static int wrfile(void)
           if (addtrace && pass1) bpos += mysnprintf(buf,bpos,blen,"tracetk(\"%3u %.*s\");\n  ",lno,toklens[tk],toks[tk]);
           if (omittoken == 0) {
             if (pass2) {
-              bpos += mysnprintf(buf,bpos,blen,"tks[dn] = T%.*s; setfpos(dn,n) ",toklens[tk],toks[tk]);
+              bpos += mysnprintf(buf,bpos,blen,"tks[dn] = T%.*s; fpos[dn] = n; ",toklens[tk],toks[tk]);
             }
             bpos += mysnprintf(buf,bpos,blen,"\n  dn++;\n  ");
           }
@@ -3397,7 +3397,7 @@ static int wrfile(void)
         bpos = wrcode(buf,bpos,blen,tp->codlen,tp->code,lno);
       }
       if (tk < nltok) {
-        if (pass2) bpos += mysnprintf(buf,bpos,blen,"\n  tks[dn] = T%.*s; setfpos(dn,n)",toklens[tk],toks[tk]);
+        if (pass2) bpos += mysnprintf(buf,bpos,blen,"\n  tks[dn] = T%.*s; fpos[dn] = n;",toklens[tk],toks[tk]);
         else if (addtrace) bpos += mysnprintf(buf,bpos,blen,"tracetk(\"%3u %.*s\");\n",lno,toklens[tk],toks[tk]);
         bpos += mysnprintf(buf,bpos,blen,"\n  dn++;\n");
       }
@@ -3409,7 +3409,7 @@ static int wrfile(void)
     if (tktabcnt) {
       bpos += mysnprintf(buf,bpos,blen,"\nlx%c_%s_gentk_%u:\n  ",passc,st0nam,st0);
       if (pass2) {
-        bpos += mysnprintf(buf,bpos,blen,"tks[dn] = tktab%c_%s[t]; setfpos(dn,n) ",passc,st0nam);
+        bpos += mysnprintf(buf,bpos,blen,"tks[dn] = tktab%c_%s[t]; fpos[dn] = n; ",passc,st0nam);
         if (tkhigrp && logrp == 0) bpos += mysnprintf(buf,bpos,blen,"tkgrps[tkgtab%c_%s[t]]++; ",passc,st0nam);
       }
       if (pass2) {

@@ -816,7 +816,7 @@ static void doemit(struct lexsyn *lsp,cchar *name)
   const enum Token *tks = lsp->toks;
   const ub1 *atrs = lsp->atrs;
   const ub8 *bits = lsp->bits;
-  const ub2 *dfps = lsp->dfps;
+  const ub4 *fpos = lsp->fpos;
   ub4 tkcnt = lsp->tkcnt;
   const ub1 *slitpool = lsp->slitpool;
 
@@ -827,8 +827,7 @@ static void doemit(struct lexsyn *lsp,cchar *name)
   ub8 x8=0;
   ub4 x4,np;
   ub2 x2;
-  ub2 dfp;
-  ub4 fpos=0;
+  ub4 fps;
   ub4 pos;
   ub4 l1,len,blen = 256;
   char buf[256];
@@ -840,10 +839,9 @@ static void doemit(struct lexsyn *lsp,cchar *name)
   for (dn = 0; dn < tkcnt; dn++) {
     tk = tks[dn];
     atr = atrs[dn];
-    dfp = dfps[dn];
-    fpos += dfp;
+    fps = fpos[dn];
     c = 0;
-    if (tk >= T99_count) ice(fpos,"invalid token %u",tk);
+    if (tk >= T99_count) ice(fps,"invalid token %u",tk);
     pos = mysnprintf(buf,0,blen,"%3u %-10s",dn,tknam(tk));
 
 #ifdef Emitdetail
@@ -890,12 +888,11 @@ static void doemit(struct lexsyn *lsp,cchar *name)
     }
 #endif
     if (c) buf[pos++] = c;
-    sinfo(fpos,"%.*s",pos,buf);
+    sinfo(fps,"%.*s",pos,buf);
   }
-  if (emit) msglog(nil,nil,nil);
+  sinfofln(0,0,"EOF");
+  if (emit) msglog(nil,nil,"lex");
 }
-
-#define setfpos(dn,n) dfps[dn] = n - prvfp; prvfp = n;
 
 static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,struct lexsyn *lsp,ub8 T0)
 {
@@ -915,7 +912,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   ub1 *tks=nil;
   ub1 *atrs=nil;
   ub8 *bits=nil;
-  ub2 *dfps=nil;
+  ub4 fps,*fpos=nil;
   struct mempart tkpart[4];
 
   ub4 tkgrps[Tkgrp];
@@ -951,7 +948,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   ub1 c,prvc1,prvc2;
   ub4 dn = 0,bn = 0;
-  ub4 n = 0, prvfp = 0;
+  ub4 n = 0;
 
   ub4 idnplen=0;
 
@@ -1037,7 +1034,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   }
 
   tkcnt = dn;
-  showcnt("x token",tkcnt);
+  showcnt("xtoken",tkcnt);
   showcnt("line",l);
   lncnt = l;
 
@@ -1053,6 +1050,8 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   showcnt("2str 2 lit",slit2cnt);
   showcnt("2str 3 lit",slit3cnt);
   showcnt("2str x lit",slitxcnt);
+
+  if (n != slen + 1) warning("len %u vs %u",n,slen);
 
   if (slitcnt) mkslithash(slitcnt);
 
@@ -1103,7 +1102,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   if (globs.rununtil == 2) { infofln(FLN,"until lex pass 1"); return 0; }
 
   tkpart[1].nel = tkpart[2].nel = tkpart[3].nel = tkcnt+Tkpad;
-  tkpart[1].siz = 2;
+  tkpart[1].siz = 4;
   tkpart[2].siz = 1;
   tkpart[3].siz = 1;
 
@@ -1112,7 +1111,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   tkbas = allocset(tkpart,4,Mnofil,"lex tokens",nextcnt);
   bits = tkpart[0].ptr;
-  dfps = tkpart[1].ptr;
+  fpos = tkpart[1].ptr;
   tks = tkpart[2].ptr;
   atrs = tkpart[3].ptr;
 
@@ -1144,8 +1143,8 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   slitpos = 4;
 
-  lncnt += 2;
-  lntab = lncnt < 1024 ? minalloc(lncnt * 4,4,Mnofil,"lex lntab") : medalloc(lncnt * 4,4,"lex lntab");
+  ub4 lntabsiz = (lncnt + 2) * 4;
+  lntab = lncnt < 1024 ? minalloc(lntabsiz,4,Mnofil,"lex lntab") : medalloc(lntabsiz,4,"lex lntab");
 
   setsrcmfile(mf,lntab,lncnt,n);
 
@@ -1183,6 +1182,8 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   showcnt("3token",tkcnt);
   showcnt("3line",l);
 
+  if (n != slen + 1) warning("len %u vs %u",n,slen);
+
   showcnt("bltin",bltcnt);
   showcnt("dunder",duncnt);
 
@@ -1208,6 +1209,12 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   tkcnt = dn;
 
+  if (l > lncnt) {
+    error("%u :1 vs %u :2 lines",lncnt,l);
+    rv = 1;
+  } else if (l < lncnt) {
+    warning("%u :1 vs %u :2 lines",lncnt,l);
+  }
   lntab[l] = n;
   lntab[l+1] = n+1;
 
@@ -1251,7 +1258,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   lsp->toks = tks;
   lsp->bits = bits;
   lsp->atrs = atrs;
-  lsp->dfps = dfps;
+  lsp->fpos = fpos;
 
   lsp->uidcnt = uidcnt;
   lsp->uid1cnt = uid1cnt;
@@ -1350,9 +1357,6 @@ int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *l
 
   if (slen == 0) { info("%s is empty",path); osclose(fd); return 0; }
   sp = alloc(xlen,char,Mnofil,"lex file",nextcnt);
-  memset(sp+slen,0,xlen-slen);
-
-  memset(sp,0,slen);
 
   timeit(&T1,nil);
 
@@ -1365,6 +1369,9 @@ int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *l
   }
   osclose(fd);
 //  if (nr != slen) { error("partial read %'uB of %'uB of %s",(ub4)nr,(ub4)slen,path); return 1; }
+
+  memset(sp+slen,0,xlen-slen);
+  sp[slen++] = '\n';
 
   ipath = minalloc(n+1,1,Mnofil,"lex inc path");
   memcpy(ipath,path,n);
@@ -1408,8 +1415,12 @@ int lexstr(const unsigned char * restrict str,ub2 slen,struct lexsyn *lsp,ub8 T0
   fb = getsrcmfile();
   fb->path = "(cmdline)";
 
+  char *src = minalloc(slen + 8,1,0,"lex -c src");
+  memcpy(src,str,slen);
+  src[slen++] = '\n';
+
   fb->len = slen;
-  rv = lex(fb,str,slen,lsp,T1);
+  rv = lex(fb,src,slen,lsp,T1);
 
   if (rv) return rv;
 

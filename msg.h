@@ -32,7 +32,8 @@ enum Msgopts {
   Msg_lno = 4,
   Msg_col = 8,
   Msg_lvl = 0x10,
-  Msg_tim = 0x20
+  Msg_tim = 0x20,
+  Msg_Lvl = 0x40
 };
 
 struct fnaminf {
@@ -70,7 +71,8 @@ extern ub4 msgerrcnt(void);
 
 #define vrb2(fmt,...) vrb2fln(FLN,fmt,__VA_ARGS__)
 
-#define vrb(fmt,...) vrbfln(FLN,fmt,__VA_ARGS__)
+#define vrb(fmt,...)  vrbfln(FLN,fmt,__VA_ARGS__)
+#define vrbo(fmt,...) vrbfln(FLN,fmt,__VA_ARGS__)
 #define svrb(fpos,fmt,...) svrbfln(FLN,fpos,fmt,__VA_ARGS__)
 
 #define info(fmt,...) infofln(FLN,fmt,__VA_ARGS__)

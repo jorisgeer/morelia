@@ -26,7 +26,7 @@ struct lexsyn {
   const ub1 *toks; // enum Token tok.h
   const ub1 *atrs;
   const ub8 *bits;
-  const ub2 *dfps;
+  const ub4 *fpos;
 
   void *tkbas;
 

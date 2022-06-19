@@ -173,9 +173,8 @@ enum Sermsg {
 };
 
 static void ser(ub4 shfln,
+  struct lexsyn *lsp,
   enum Token tk,
-  const ub1* atrs,
-  ub4 fpos,
   ub4 ti,
   enum Nterm r,
   ub2 si,enum Sermsg sm,enum Symbol xps,ub1 ctl,
@@ -191,6 +190,7 @@ static void ser(ub4 shfln,
   enum Ctl z,repc;
   const enum Ctl *cp;
   enum Satrs satr=Sa_none;
+  ub4 fps;
   ub1 atr;
   ub1 ns;
   ub2 se;
@@ -205,6 +205,10 @@ static void ser(ub4 shfln,
   ub1 repsym[Scount+1];
   bool haverep = 0;
 
+  const ub1        * restrict atrs   = lsp->atrs;
+  const ub8        * restrict tkbits = lsp->bits;
+  const ub4        * restrict fpos   = lsp->fpos;
+
   switch(sm) {
     case Ser_nil: msg = "nil"; break;
     case Ser_nofirst: msg = "nofirst"; break;
@@ -218,6 +222,7 @@ static void ser(ub4 shfln,
   }
 
   atr = atrs[ti];
+  fps = fpos[ti];
   pos = mysnprintf(buf,0,len,"ti %u %s: expected: %s",ti,msg,xpmsg);
 
   printfirst(r);
@@ -264,7 +269,7 @@ static void ser(ub4 shfln,
     s = sp[si];
 
     eip = stinfo + se;
-    sinfo(fpos,"si %u/%u ln %u",si,ns,eip->lno);
+    sinfo(fps,"si %u/%u ln %u",si,ns,eip->lno);
 
     pos += mysnprintf(buf,pos,len,"\n%s.%s`z representing '%s' at %s.%u\n",ntnam(r),prdnam(se,0),symnam(s),synfname,eip->lno);
 
@@ -300,7 +305,7 @@ static void ser(ub4 shfln,
 
   mysnprintf(buf,pos,len,", found '%s'\n",sm == Ser_eof ? "<eof>" : tknam(tk,atr));
 
-  serrorfln(shfln,fpos,buf,nil);
+  serrorfln(shfln,fps,buf,nil);
 }
 
 #ifdef Trace
@@ -319,14 +324,14 @@ static void __attribute__ ((format (printf,10,11))) sdiafln(
   cchar *fmt,...)
 {
   static ub2 rowcnt;
-  const enum Token * restrict tks = lsp->toks;
-  const ub1        * restrict atrs = lsp->atrs;
+  const enum Token * restrict tks    = lsp->toks;
+  const ub1        * restrict atrs   = lsp->atrs;
   const ub8        * restrict tkbits = lsp->bits;
-  const ub2        * restrict dfps = lsp->dfps;
+  const ub4        * restrict fpos   = lsp->fpos;
   enum Token tk = tks[ti];
   ub4 atr       = atrs[ti];
 
-  ub4 fpos = 0;
+  ub4 fps = 0;
   ub4 len = 512;
   char buf[512];
   ub2 lno=0;
@@ -343,7 +348,7 @@ static void __attribute__ ((format (printf,10,11))) sdiafln(
   const struct seinfo *eip=nil;
   const enum Symbol *sp;
 
-  for (n=0;n<ti;n++) fpos += dfps[n];
+  fps = fpos[ti];
 
   if ( (rowcnt++ & 31) == 0) infofln(hi32,"%-19s lvl %-12s se si %-12s ti tk","","prod","sym");
 
@@ -408,7 +413,7 @@ static void __attribute__ ((format (printf,10,11))) sdiafln(
 
   va_start(ap,fmt);
 
-  vmsgps(shfln,Info,fpos,fmt,ap,buf,nil);
+  vmsgps(shfln,Info,fps,fmt,ap,buf,nil);
 
   va_end(ap);
 }
@@ -419,9 +424,10 @@ static void __attribute__ ((format (printf,10,11))) sdiafln(
 int syn(struct lexsyn *lsp,struct synast *sa)
 {
   const enum Token * restrict tks = lsp->toks;
-  const ub1 * restrict atrs = lsp->atrs;
+  const ub1 * restrict atrs   = lsp->atrs;
   const ub8 * restrict tkbits = lsp->bits;
-  const ub2 * restrict dfps = lsp->dfps;
+  const ub4 * restrict fpos   = lsp->fpos;
+
   ub4 *tkgrps = lsp->tkgrps;
   cchar *name = lsp->name;
   int rv = 0;
@@ -436,7 +442,7 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   ub4 bi = 0;
   ub4 ni2,ni1,ndcnt,ni = 0; // node index
 
-  ub2 lvl = 0,hilvl = 0;
+  ub2 lvl = 0,prvlvl,hilvl = 0;
 
   // main parser stack
   ub1 ves[Depth];
@@ -449,7 +455,7 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   ub4 arg,*argp;
 
   ub8 vals[Depth * Nodarg];
-  ub8 *valp;
+  ub8 val=0,*valp;
 
   ub2 n;
 
@@ -461,7 +467,7 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   ub4 repfnids[Depth];
   ub4 replnids[Depth];
 
-  ub4 fpos = 0;
+  ub4 ntfps=0,fps=0;
   ub8 bits = 0;
   ub4 bits4;
   ub4 idid;
@@ -472,7 +478,7 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   ub2 mrg;
   Mrgbits mrgbit;
 
-  bool reppm,isrep;
+  bool isrep;
   ub1 match=0;
 
   enum Token tk=0,tk1;
@@ -502,8 +508,6 @@ int syn(struct lexsyn *lsp,struct synast *sa)
 
   ub4 uidcnt = lsp->uidcnt;
 
-  ub4 estndcnt,estandcnt;
-
   ub4 ndcnts[Acount+1];
   ub4 rep2cnts[Acount+1];
 
@@ -522,16 +526,20 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   ub4 valcnt = idcnt + lsp->nlitcnt + lsp->slitcnt;
   sa->valcnt = valcnt;
 
-  estndcnt = estandcnt = tkgrps[0];
+  ub4 estxndcnt = tkgrps[1] + tkgrps[2]; // + ops + scope
 
-  estndcnt += tkgrps[1] + tkgrps[2]; // storables + ops + scope
+  ub4 estndcnt  = tkgrps[0]; // storables
+  ub4 estandcnt = estndcnt * hiruldep * 2;
+
+  estndcnt  += estxndcnt;
+  estandcnt += estxndcnt;
 
   if (estndcnt == 0) ice(0,hi32,"no nodes for %u tokens",tcnt);
 
-  ub4 nodlim = estndcnt * 4 + 1024;
-  estandcnt += nodlim + 1024;
+  ub4 nodlim = estandcnt;
 
   ub4 *nhtab = alloc(estandcnt,ub4,Mnofil,"syn nhtab",nextcnt);
+  ub4 *ndtis = alloc(estandcnt,ub4,Mnofil,"syn ndtis",nextcnt);
 
   ub4 *ndargs = alloc(nodlim * Nodarg,ub4,Mnofil,"syn ndargs",nextcnt);
 
@@ -539,12 +547,13 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   sa->vals = vals;
 
   struct rnode *np,*np1,*np2,*nodes = alloc(nodlim,struct rnode,Mnofil,"syn nodes",nextcnt);
+  ub4 *sibs = alloc(nodlim,ub4,Mnofil,"syn ndsibs",nextcnt); // siblings for rep
 
-  ub4 nid=0,n4,nd,nn,aid=0;
+  ub4 nid=0,n4,nd,nn,aid=0,aidcnt;
 
   ub1 acnt;
   ub2 argcnt,cnt,am,ac;
-  ub4 napos=0,nacnt,nvpos=0,napos0;
+  ub4 napos=0,nacnt,nvpos=0;
 
   ub4 itercnt = 0,iterlim = tcnt * 8;
 
@@ -567,7 +576,6 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   am = 0;
   argp = args + lvl * Nodarg;
   valp = vals + lvl * Nodarg;
-  memset(vals,0xff,sizeof vals);
 
 // -------------------
 rulstart:
@@ -578,7 +586,7 @@ rulstart:
 // select production
   ai = syntabeas[ve];
 
-  sdia(lsp,ti,0,s,r,lvl,ve,si,"pos %u select ai %x",fpos,ai);
+  sdia(lsp,ti,0,s,r,lvl,ve,si,"pos %u select ai %x",fps,ai);
 
   if (ai & Sa_s0) {
     ti++;
@@ -608,18 +616,17 @@ nxtsym:
 // -------------------
   len = ai & 0xf;
 
-  reppm = isrep;
-
   do { // each sym in clause
 
     // info("reppm %u isrep %u",reppm,isrep);
 
-    if (si >= Slen) ice(0,fpos,"si %u",si);
-    if (++itercnt > iterlim) ice(0,fpos,"iter lim %u",iterlim);
+    if (si >= Slen) ice(0,fps,"si %u",si);
+    if (++itercnt > iterlim) ice(0,fps,"iter lim %u",iterlim);
 
     tk = tks[ti];
-    fpos += dfps[ti];
+    fps = fpos[ti];
 
+    sinfo(fps,"tk %u/%u %s",ti,tcnt,tknam(tk,0));
     // vrb("tk %u.%s ti %u si %u/%u",tk,tknam(tk,0),ti,si,len);
 
     s = sp[si];
@@ -630,11 +637,7 @@ nxtsym:
 
     sdia(lsp,ti,0,s,r,lvl,ve,si,"z %x",z);
 
-    if (s < Stoken) { // token = term
-
-      match = (s == (enum Symbol)tk);
-
-    } else if (s < Smrgset) { // nonterms -> push
+    if (s >= Stoken && s < Smrgset) { // nonterms -> push
 
       nxr = s - Stoken;
       nxndx = nxr * Stbl_tklen + tk;
@@ -658,8 +661,8 @@ nxtsym:
           if (lasn < lan) {
             sdia(lsp,ti,0,s,r,lvl,nxve,si,"la %u on tk %s",lasn,tknam(tk1,0));
             nxve = lasets[laid * Laset + lasn];
-          } else ser(FLN,tk,atrs,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
-        } else ser(FLN,tk,atrs,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
+          } else ser(FLN,lsp,tk,ti,nxr,si,Ser_nofirst,T99_count,z,se);
+        } else ser(FLN,lsp,tk,ti,nxr,si,Ser_nofirst,T99_count,z,se);
       } // la
 #endif
 
@@ -669,14 +672,14 @@ nxtsym:
         if (nxve == P0block) {
           scid++;
           curscope++;
-          if (curscope >= Depth) serror(fpos,"scope exceeds %u at %s",curscope,tknam(s,0));
+          if (curscope >= Depth) serror(fps,"scope exceeds %u at %s",curscope,tknam(s,0));
           else if (curscope > hiblklvl) { hiblklvl = curscope; hiblkti = ti; }
         }
 #endif
 
         sdia(lsp,ti,0,s,r,lvl,nxve,si,"push %u into %s ve %u from %s`z",ve,ntnam(nxr),nxve,prdnam(ve,tk));
 
-        if (lvl + Skip >= Depth) ice(fpos,0,"exceeding %u nesting depth",lvl);
+        if (lvl + Skip >= Depth) ice(fps,0,"exceeding %u nesting depth",lvl);
 
         sis[lvl] = si; // (repc == Crep0n ? si : si + 1);
         ves[lvl] = ve;
@@ -764,6 +767,7 @@ nxtsym:
             break;
         }
         nhtab[aid] = ndti | (aty << Atybit) | (atr << Aopbit);
+        ndtis[aid] = ti;
         argp[argc] = aid++;
         am |= (1 << argc);
         info("arg %u %x t %u ve %u si %u",argc,argp[argc],aty,ve,si);
@@ -790,23 +794,20 @@ nxtsym:
           if (repcc) {
             sdia(lsp,ti,0,s,r,lvl,nxve,si,"skip grp %u",repcc);
             si += repcc;
-          } // else if (ti >= tcnt) goto eof;
-          else ser(FLN,tk,atrs,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
+          } else if (ti >= tcnt) goto eof;
+          else ser(FLN,lsp,tk,ti,nxr,si,Ser_nofirst,T99_count,z,se);
         }
       }
 
-    } else if (s < Scount) { // merged tokens
-
-      mrg = s - Smrgset;
-      mrgbit = 1U << mrg;
-
-      match = (tkmrgtab[tk] & mrgbit);
-
     } else {
-      ser(FLN,tk,atrs,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
-    }
+      if (s < Stoken) { // token = term
+        match = (s == (enum Symbol)tk);
 
-    if (s < Stoken || s >= Smrgset) { // term
+      } else if (s < Scount) { // merged tokens
+        mrg = s - Smrgset;
+        mrgbit = 1U << mrg;
+        match = (tkmrgtab[tk] & mrgbit);
+      }
 
       if (match) {
         sdia(lsp,ti,0,s,r,lvl,ve,si,"match term %u len %u",z,len);
@@ -814,8 +815,6 @@ nxtsym:
         if (argc) {
           argc--;
           atr = atrs[ti];
-
-          if ((am & (1 << argc)) == 0) {  // store first - common occurence as ti : others are at ti+n
 
         switch (tk) {
           case Tid:
@@ -869,32 +868,44 @@ nxtsym:
                       valp[argc] = bits | ((ub8)fpos << 32);
                       break;
 
-          case Tast: argp[argc] = (Omul << Aopbit) | (Aop << Atybit); break;
+          case Tast:
+            if ((am & (1 << argc)) == 0) {  // store first - common occurence as ti : others are at ti+n
+              argp[argc] = (Omul << Aopbit) | (Aop << Atybit);
+            } else {
+              info("arg %u %x ve %u si %u",argc,argp[argc],ve,si);
+              arg = argp[argc];
+              argp[argc] = arg + 1;
+            }
+            break;
+
           case Tpm: bits1 = atr; bop = bits1 ? Oadd : Osub; argp[argc] = (bop << Aopbit) | (Aop << Atybit); break;
           case Top: bits1 = atr;
                     bop = (enum Bop)bits1;
+                    aty = Aop;
                     argp[argc] = (bop << Aopbit) | (Aop << Atybit);
                     break;
           default:  aty = Acount; break; // todo rep
-        }
+          }
 
-            if (aty <= Aleaf) {
-              if (ndti >= Acntlim) serror(fpos,"node count exceeds limit %u",Acntlim);
-              nhtab[aid] = ndti | (aty << Atybit);
-              info("arg %u t %u",argc,aty);
-              argp[argc] = aid++;
-              am |= (1 << argc);
-            }
+          if (aty <= Aleaf) {
+            if (ndti >= Acntlim) serror(fps,"node count exceeds limit %u",Acntlim);
+            nhtab[aid] = ndti | (aty << Atybit);
+            ndtis[aid] = ti;
+            info("arg %u t %u",argc,aty);
+            argp[argc] = aid++;
+            am |= (1 << argc);
+          }
             // info("arg %u %x ve %u si %u",argc,argp[argc],ve,si);
 
-          } else { // repetition not for grp 0 or 1
-            info("arg %u %x ve %u si %u",argc,argp[argc],ve,si);
-            arg = argp[argc];
-            nhtab[arg] += (1U << Aopbit);
-          }
-        }
-        if (repc != Crep0n) si++;
-//        info("ti %u",ti);
+        } // argc
+
+        if (repc == Creplp) {
+          ti++;
+          goto endsym; // continue rep
+
+        } else if (repc != Crep0n) si++;
+
+        // info("ti %u",ti);
         ti++;
 
       } else { // nonmatch term
@@ -905,11 +916,11 @@ nxtsym:
         if (repc == Crep01 || repc == Crep0n) si++; // common case
         else if (repc == Creplp) goto endsym; // end rep
         else {
-          repcc = repc >> Crepshift;
+          repcc = repc >> Crepshift; // crep2+
           if (repcc) {
             sdia(lsp,ti,0,s,r,lvl,se,si,"skip grp %u",repcc);
             si += repcc;
-          } else ser(FLN,tk,atrs,fpos,ti,nxr,si,Ser_nofirst,T99_count,z,se);
+          } else ser(FLN,lsp,tk,ti,nxr,si,Ser_nofirst,T99_count,z,se);
 
        } // generic case
 
@@ -924,42 +935,51 @@ nxtsym:
 endsym:
 // ------------
 
-  napos0 = napos;
   argc = 0;
-
   for (ac = 0; ac < Nodarg; ac++) {
-    if (am & (1 << ac)) {
-      nn = argp[ac];
-      nd = nhtab[nn];
-      ndargs[napos++] = nn | ((ub4)argc << 30);
-      aty = nd >> Atybit;
-      if (aty <= Aval) { info("val %lu for %s`z",valp[ac],atynam(aty)); ndvals[nvpos++] = valp[ac]; argc++; }
-      argc++;
-    }
-  }
+    bit = 1 << ac;
+    if ( (am & bit) == 0) continue;
 
-  if (ni >= nodlim) serror(fpos,"exceeded %u nodes",nodlim);
-  np = nodes + ni;
-  np->ve = ve;
-  np->lvl = lvl;
-
-  if (argc == 1) {
-    if (reppm) {
-      sdia(lsp,ti,0,s,r,lvl,se,si,"node %2u",ni);
+    nn = argp[ac];
+    nd = nhtab[nn];
+    aty = nd >> Atybit;
+    if (aty <= Aval) { // create leaf node
+      info("val %lu for %s`z",valp[ac],atynam(aty));
+      np = nodes + ni;
+      np->ve = ve;
+      np->lvl = lvl;
       np->amask = 0;
       np->ni = nn;
       nid = ni;
       ni++;
+      if (ni >= nodlim) serror(fps,"exceeded %u nodes",nodlim);
+      ndvals[nvpos++] = valp[ac];
     }
-  } else if (argc > 1) {
+    argc++;
+  }
+
+  if (argc > 1) { // create node for this prd
+
+    argc = 0;
+    for (ac = 0; ac < Nodarg; ac++) {
+      bit = 1 << ac;
+      if ( (am & bit) == 0) continue;
+
+    // arg
+      nn = argp[ac];
+      ndargs[napos++] = nn | ((ub4)argc << 30) | (ni << 16);
+      argc++;
+    }
+
+    np = nodes + ni;
+    np->ve = ve;
+    np->lvl = lvl;
 
     sdia(lsp,ti,0,s,r,lvl,se,si,"node %2u",ni);
 
-    np->ai = napos0;
-
     np->amask = am;
 
-    info("node %u argpos %u am %u argc %u ve %u",ni,napos0,am,argc,ve);
+    info("node %u argpos %u am %u argc %u ve %u",ni,napos,am,argc,ve);
     np->ve = ve;
 
 #if 0
@@ -974,56 +994,37 @@ endsym:
     ndti = ndcnts[aty]++;
     nhtab[aid] = ndti | (aty << Atybit);
     np->ni = aid++;
+    info("node %u argc %u",ni,argc);
 
     nid = ni;
     ni++;
-  } else {
-    napos = napos0;
-    info("node %u argpos %u",ni,napos);
-  }
+  } // argc > 1
 
   // info("reppm %u isrep %u ve %u",reppm,isrep,ve);
 
-  if (reppm) { // repeat rule
+  if (isrep) { // repeat rule
     repcnt = repcnts[lvl];
-    info("repcnt %u at %u",repcnt,lvl);
+    vrbo("repcnt %u at %u",repcnt,lvl);
     if (am) {
 //      if (repcnt >= Repcnt) serror(fpos,"exceeding %u repeat count",repcnt);
       if (repcnt == 0) repfnids[lvl] = replnids[lvl] = nid;
       else {
         ni2 = replnids[lvl];
-        nodes[ni2].sib = nid;
+        sibs[ni2] = nid;
         replnids[lvl] = nid;
       }
       repcnts[lvl] = repcnt+1;
-      info("Repcnt %u at %u",repcnt+1,lvl);
+      vrbo("Repcnt %u at %u",repcnt+1,lvl);
     }
-
-    tk = tks[ti];
-    atr = atrs[ti];
-    fpos += dfps[ti];
-
-    nxndx = r * Stbl_tklen + tk;
-    nxve = prdsel[nxndx];
-    if (nxve < Ptablen) {
-      ve = nxve;
-      ai = syntabeas[nxve];
-      x2 = vprdmap[nxve];
-      nxse = x2 & 0xff;
-      sdiafln(FLN,lsp,ti,0,s,Ncount,lvl,nxse,si,"repeat on %u.%u",ve,se);
-      si = (ai >> 4) & 3;
-      if (ai & Sa_s0) ti++;
-      isrep = ai & Sa_rep;
-      memset(argp,0xff,Nodarg * ub4siz);
+    if (match) {
+      si = 0;
       goto nxtsym;
 
     } else { // nonmatch at end of rep -> always ok end
-      sdiafln(FLN,lsp,ti,0,s,r,lvl,ve,si,"end rep on %u tk %s %u",se,tknam(tk,0),nxve);
+      sdiafln(FLN,lsp,ti,0,s,r,lvl,ve,si,"end rep on %u tk %s %u",se,tknam(tk,0),ve);
 
       if (repcnt > 1) { // create rep node
         np = nodes + ni;
-
-        np->ai = napos;
         np->amask = repcnt;
         info("repnode %u argpos %u ve %u",ni,napos,ve);
 
@@ -1033,7 +1034,7 @@ endsym:
           ve2 = np2->ve;
           info("ve %u %s`z",ve,prdnam(ve,0));
           ndargs[napos++] = np2->ni;
-          ni2 = np2->sib;
+          ni2 = sibs[ni2];
         }
         aty = Prd2nod[ve];
         if (repcnt == 2) rep2cnts[aty]++;
@@ -1042,20 +1043,20 @@ endsym:
         nhtab[aid++] = ndti | (aty << Atybit);
         np->ve = ve;
         np->lvl = lvl;
-        info("rep node %u cnt %u ve %u.%u %s`z",ni,repcnt,ve,aty,prdnam(ve,0));
+        info("rep node %u cnt %u ve %u.%u %s`z %s`z",ni,repcnt,ve,aty,prdnam(ve,0),atynam(aty));
         nid = ni++;
       } else info("rep node %u cnt %u ve %u",ni,repcnt,ve);
     }
   } else {
-    // info("reppm %u isrep %u",reppm,isrep);
+    info("isrep %u",isrep);
   }
 
   if (lvl == 0) {
     if (ti >= tcnt) {
 //    icefln(FLN,hi32,fpos,"pop at lvl 0 after %u` tokens and %u` nodes",ti,ni);
-      sinfo(fpos,"pop at lvl 0 after %u` tokens and %u` nodes",ti,ni);
+      sinfo(fps,"pop at lvl 0 after %u` tokens and %u` nodes",ti,ni);
       goto eof;
-    } else icefln(FLN,hi32,fpos,"pop at lvl 0 after %u/%u tokens and %u` nodes",ti,tcnt,ni);
+    } else icefln(FLN,hi32,fps,"pop at lvl 0 after %u/%u tokens and %u` nodes",ti,tcnt,ni);
   }
 
   // pop. note: si not moved at push
@@ -1065,6 +1066,7 @@ endsym:
   nxve = ves[lvl];
   am = ams[lvl];
   info("node %u nxve %u",ni,nxve);
+  argp -= Nodarg;
 
   ai = syntabeas[nxve];
 
@@ -1082,8 +1084,6 @@ endsym:
 
   len = ai & 0xf;
 
-  argp = args + lvl * Nodarg;
-
   z = cp[si];
   repc = z & Crepmask;
   argc = z & Cargmask;
@@ -1098,17 +1098,20 @@ endsym:
       aty = prd2nod[ve];
     }
 #endif
+
+#if 1
     aty = prd2nod[ve];
 
     ndti = ndcnts[aty]++;
-    sinfo(fpos,"ni %u argc %u t %u %s`z",ni,argc,aty,atynam(aty));
+    sinfo(fps,"ni %u argc %u t %u %s`z",ni,argc,aty,atynam(aty));
 
     nhtab[aid] = ndti | (aty << Atybit);
     nodes[nid].ni = argp[argc] = aid++;
     am |= (1 << argc);
+#endif
+    sinfo(fps,"arg %u",argc);
   }
 
-  reppm = 0;
   ve = nxve;
 
   isrep = ai & Sa_rep;
@@ -1118,8 +1121,6 @@ endsym:
   }
 
 //  info("se %u si %u s %u",se,si,sp[si]);
-
-  reppm = isrep;
 
   if (si >= len) goto endsym;
   else {
@@ -1134,9 +1135,11 @@ endsym:
   showcnt("3node",ni);
   showcnt("3arg",napos);
 
+  afree(sibs,"syn ndsibs",nextcnt);
+
   if (ti < tcnt) {
     info("ti %u/%u",ti,tcnt);
-    ser(FLN,tk,atrs,fpos,ti,r,si,Ser_eof_nostart,T99_count,0,0);
+    ser(FLN,lsp,tk,ti,r,si,Ser_eof_nostart,T99_count,0,0);
     return 1;
   }
 
@@ -1152,9 +1155,9 @@ endsym:
   np->ni = aid;
   np->lvl = 0;
   np->amask = 0;
-
   nhtab[aid] = (ub4)Acount << Atybit;
 
+  aidcnt = aid + 1;
   ndcnt = ni+1;
   nacnt = napos;
 
@@ -1165,7 +1168,7 @@ endsym:
   while (hilvl < Depth && sis[hilvl] != 0xff) hilvl++;
 
   info("max parser stack lvl %u",hilvl);
-  if (lvl) ice(hi32,fpos,"syn eof at lvl %u",lvl);
+  if (lvl > 1) ice(hi32,fps,"syn eof at lvl %u",lvl);
 
 //  if (r != startrule) { ser(FLN,tk,bits,fpos,ti,r,si,Ser_eof_nostart,T99_count,0,0); return 1; }
 
@@ -1174,8 +1177,9 @@ endsym:
   sa->nhs = nhtab;
   sa->nodes = nodes;
   sa->ndcnt = ndcnt;
-  sa->aidcnt = aid+1;
+  sa->aidcnt = aidcnt;
   sa->args = ndargs;
+  sa->tis = ndtis;
   sa->argcnt = nacnt;
   sa->nscid = scid;
   sa->hiblklvl = hiblklvl;
@@ -1194,24 +1198,31 @@ endsym:
   ub4 nh;
   enum Astyp nt;
 
-  msglog(name,"nds","syn");
+//  msglog(name,"nds","syn");
   napos = 0;
+  nvpos = 0;
 
-  sinfofln(FLN,0,"nd  prod    lvl am");
+  sinfofln(FLN,hi32,"nd  prod    lvl am");
   for (ni = 0; ni < ndcnt; ni++) {
     np = nodes + ni;
     ve = np->ve;
+    prvlvl = lvl;
     lvl = np->lvl;
     am = np->amask;
-    napos0 = np->ai;
     aid = np->ni;
+    if (aid > aidcnt) ice(0,0,"aid %u out of range %u",aid,aidcnt);
     nh = nhtab[aid];
     ndti = nh & Atymsk;
     nt = nh >> Atybit;
 
     pos = mysnprintf(buf,0,blen,"%3u %3u.%u %u %x %*s %-8s`z %-8s`z",ni,aid,ndti,lvl,am,lvl," ",prdnam(ve,0),atynam(nt));
-    if (napos != napos0) ice(0,0,"nd %u napos %u vs %u",ni,napos,napos0);
-    info("nd %u am %u pos %u/%u ve %u %s`z",ni,am,napos,napos0,ve,atynam(nt));
+    vrbo("nd %u am %u pos %u ve %u %s`z",ni,am,napos,ve,atynam(nt));
+
+    if (nt <= Aval) {
+      if (nvpos >= valcnt) ice(0,0,"out of range var %u",nvpos);
+      val = vals[nvpos++];
+    }
+
     switch(nt) {
 //    case Acount: ice(0,0,"node %u invalid type for ni %u",ni,aid);
     case Arexp:
@@ -1221,7 +1232,34 @@ endsym:
       napos += repcnt;
       if (napos > nacnt) ice(0,0,"arg %u/%u",napos,nacnt);
       pos += mysnprintf(buf,pos,blen," [%u]",repcnt);
-      break;
+    break;
+
+    case Aid:
+      x4 = val & hi32;
+      fps = val >> 32;
+      pos += mysnprintf(buf,pos,blen," id %u %u",x4,ndti);
+    break;
+
+    case Ailit:
+      pos += mysnprintf(buf,pos,blen," ilit %lu %u",val,ndti); break;
+    break;
+
+    case Ailitn:
+    case Aflit:
+
+    case Aslit: // Aval
+    break;
+
+    case Ailits: pos += mysnprintf(buf,pos,blen," ilits %u",ndti); break;
+
+    case Ailitns: break;
+
+    case Atru:
+    case Afal:
+    case Akwd:
+
+    case Aop:   break;
+
     default:
       bit = 1;
       argc = 0;
@@ -1229,21 +1267,30 @@ endsym:
         if (am & bit) {
           if (napos >= nacnt) ice(0,0,"nd %u arg %u/%u",ni,napos,nacnt);
           nn = ndargs[napos++];
-          ac = nn >> 30; nn &= hi56;
+          ac = nn >> 30; nn &= hi24;
+          n4 = nn >> 16;
+          nn &= hi16;
           if (ac != argc) ice(0,0,"nd %u arg %u/%u",ni,argc,ac);
+          if (n4 != ni) ice(0,0,"nd %u arg %u nd %u",ni,argc,n4);
           nh = nhtab[nn];
           ndti = nh & Atymsk;
           nt = nh >> Atybit;
           pos += mysnprintf(buf,pos,blen," %u .%u %s`z.",argc,ndti,atynam(nt));
-          info("nd %u arg %u/%u %s`z",ni,argc,napos,atynam(nt));
+          vrbo("nd %u arg %u/%u %s`z",ni,argc,napos,atynam(nt));
         }
         bit <<= 1; argc++;
       }
+    } // switch nt
+    if (lvl > prvlvl) {
+      ntfps = fps;
     }
-    sinfo(0,"%s",buf); pos = 0;
-  }
 
-  msglog(nil,nil,nil);
+    sinfofln(FLN,nt > Aleaf ? fps : ntfps,"%s",buf); pos = 0;
+  }
+  sinfofln(0,hi32,"EOF");
+
+  msglog(nil,nil,"syn");
+  if (napos != nacnt) ice(0,0,"arg %u vs %u",napos,nacnt);
 
   return rv;
 }

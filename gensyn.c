@@ -91,10 +91,14 @@ struct rule {
   ub1 maxlen;
   ub1 lotcnt,hitcnt,hisi;
   ub1 rulrep;
+  ub1 hidep;
   bool havearg;
   ub1 mrgset;
+  ub1 argcnt;
 
   ub2 lno;
+
+  ub8 secadd;
 
   char name[Ntnam];
 
@@ -114,7 +118,6 @@ struct rule {
 
   ub8 second0[T99_count]; // bit=tkterm2 dim0=term1
   ub8 second[Nalt * Nsi * T99_count]; // bit=tkterm2 dim0=term1 dim1=si dim2=alt
-  ub8 secadd;
 
   ub1 altlens[Nalt];
   ub2 lnos[Nalt];
@@ -195,6 +198,8 @@ static ub8 laseconds[Lacnt * T99_count * Laset];
 
 static ub1 higrpdif;
 static ub4 higrpfln;
+
+static ub4 hiruldep;
 
 static ub2 prdid_blk = hi16;
 
@@ -1666,10 +1671,10 @@ static bool doargs(void)
 {
   struct rule *rp,*rxp;
   enum Token tk;
-  ub1 hiarg=0;
+  ub1 hirarg,hiarg=0;
   ub1 z,*cp;
   ub1 arg,*ap;
-  ub2 rx,r;
+  ub2 rx,r,hidepr=0;
   ub2 acnt,slen,a,aa;
   ub1 s,*sp;
   ub2 si,i,n;
@@ -1678,6 +1683,9 @@ static bool doargs(void)
   bool doarg,change=0;
   ub1 narg;
   static ub2 iter;
+  ub2 rr,rul2 = rulcnt * rulcnt;
+  ub1 hidep=0;
+  ub1 *ruldep = minalloc(rul2,1,0,"ruldep");
 
   info("doargs iter %u",iter++);
 
@@ -1688,7 +1696,9 @@ static bool doargs(void)
     lno = rp->lno;
     lnx = lno|Lno;
     acnt = rp->altcnt;
+    rr = r * rulcnt;
 
+    hirarg=0;
     for (a = 0; a < acnt; a++) { // each alt
       aa = a * Altlen;
       sp = rp->alts + aa;
@@ -1721,7 +1731,14 @@ static bool doargs(void)
       } else { // nonterm
         rx = s - T99_count;
         rxp = rules + rx;
-        if (rxp->havearg) { doarg = 1; svrb2(lnx,r,s,"rule arg for %u",s); }
+        if (rxp->argcnt) {
+          doarg = 1;
+          svrb2(lnx,r,s,"rule arg for %u",s);
+          if (ruldep[rr + rx] == 0) {
+            ruldep[rr + rx] = rxp->hidep + 1;
+            rp->hidep = max(rp->hidep,ruldep[rr + rx]);
+          }
+        }
       }
 
       if (doarg) {
@@ -1734,16 +1751,29 @@ static bool doargs(void)
      if (rp->argcnts[a] != narg) change = 1;
      rp->argcnts[a] = narg;
      if (narg) {
-       if (rp->havearg == 0) change = 1;
-       rp->havearg = 1;
+       if (narg > hirarg) hirarg = narg;
+       if (narg > hiarg) { hiarg = narg; hiargln = lno; }
+       if (rp->argcnt < hirarg) {
+         change = 1;
+         rp->argcnt = hirarg;
+       }
      }
-     if (narg > hiarg) { hiarg = narg; hiargln = lno; }
     } // each alt
-
+    rp->argcnt = hirarg;
+    if (change == 0) {
+      sinfo2(lnx,r,0xff,"hi depth %u",rp->hidep);
+      if (rp->hidep > hidep) { hidep = rp->hidep; hidepr = r; }
+    }
   } // each rule
 
-  if (change == 0 && hiarg) info("max %u args at ln %u",hiarg,hiargln);
-  return change;
+  if (change) return 1;
+
+  if (hiarg) info("max %u args at ln %u",hiarg,hiargln);
+  rp = rules + hidepr;
+  sinfo2(rp->lno|Lno,hidepr,0xff,"hi depth %u",hidep);
+  hiruldep = hidep;
+
+  return 0;
 }
 
 static int rdspec(cchar *fname,ub1 *src)
@@ -3181,6 +3211,8 @@ static int wrfile(void)
 
   myfprintf(&sfp,"// %2u ve entries",vecnt);
   if (dircnt) myfprintf(&sfp," %2u dir entries",dircnt);
+
+  myfprintf(&sfp,"\n\nstatic const ub1 hiruldep = %u;\n",hiruldep);
 
   myfprintf(&sfp,"\n\nstatic const ub2 poolsizes = %u;\n",poolsizes);
   if (latabsizes) myfprintf(&sfp,"#define Latabsizes %u\n\n",latabsizes);

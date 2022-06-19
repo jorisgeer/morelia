@@ -94,8 +94,6 @@ set
 keyword
 #  and
 #  as
-  break 1
-#  continue
   def
 #  del
 #  elif
@@ -112,6 +110,7 @@ keyword
 #  return
   while
 #  with
+  break|continue=ctlxfer
 
 builtin
   False
@@ -252,7 +251,7 @@ id2
 2   bits[bn++] = id;
 2   atrs[dn] = Idlen_2;
   }
-2 tks[dn] = tk; setfpos(dn,n)
+2 tks[dn] = tk; fpos[dn] = n;
 2 dn++;
 
 id
@@ -265,8 +264,9 @@ id
 1 idnplen += len;
 1 exp_first0(hc);
 2 kw = lookupkw(len,hc);
-2 if (kw < t99_count) { setkwd(tk,atrs[dn],kw); if (Tkgrp > 1) tkgrps[kwgrps[tk]]++; }
-2 else {
+2 if (kw < t99_count) {
+2   if (kw < (enum token)T99_mrg) tk = kw; else { atrs[dn] = kw; tk = kwhshmap[kw]; tkgrps[0]++; }
+2 } else {
 2   tk = Tid;
 2   blt = lookupblt(len,hc);
 2   if (blt < B99_count) { bits[bn++] = blt; atrs[dn] = Idctl_blt; bltcnt++; }
@@ -276,7 +276,7 @@ id
 2     atrs[dn] = Idlen_n;
 2   }
 2 }
-2 tks[dn] = tk; setfpos(dn,n)
+2 tks[dn] = tk; fpos[dn] = n;
 2 dn++;
 
 # ----------------------
@@ -297,13 +297,13 @@ dodent
   if (dent > dentst[dentlvl]) {
     if (dentlvl < Dent-1) dentlvl++;
     dentst[dentlvl] = dent;
-2   tks[dn] = Tco; setfpos(dn,n)
+2   tks[dn] = Tco; fpos[dn] = n;
     dn++;
   } else {
-2   tks[dn] = Tsepa; setfpos(dn,n)
+2   tks[dn] = Tsepa; fpos[dn] = n;
     dn++;
     while (dent < dentst[dentlvl]) {
-2     tks[dn] = Tcc; setfpos(dn,n)
+2     tks[dn] = Tcc; fpos[dn] = n;
       dn++;
       if (dentlvl) dentlvl--;
       else break;
@@ -441,9 +441,6 @@ root
 # 2-3 char operators
 # ---------------------
 oper
-#  op= root aas 2. atrs[dn] |= (c << 8);
-#  op  root op  2. atrs[dn] |= (c << 8);
-
   < root . 2. atrs[dn] = Loshl;
   > root . 2. atrs[dn] = Loshr;
   & root . 2. atrs[dn] = Loand;

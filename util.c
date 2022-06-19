@@ -963,11 +963,17 @@ static void getearg(cchar *ap,cchar *lp,struct cmdval *cv)
 
 enum Optargs { Optnone, Optional, Optreq, Optstr=0x10, Optint=0x20,Optenum=0x40 };
 
-static void optarg(const char *ap,const char *lp,struct cmdval *cv)
+static void optarg(cchar *arg,cchar *ap,cchar *lp,struct cmdval *cv)
 {
+  ub4 len;
+
   if (*ap != '%') {
     cv->sval = lp;
-    cv->vlen = strlen(lp);
+    len = strlen4(lp);
+    if (len > hi16 - 16) {
+      warning("arg '%s' len %u exceeds 64k - truncated",arg,len);
+    }
+    cv->vlen = len;
     return;
   }
   ap++;
@@ -975,7 +981,7 @@ static void optarg(const char *ap,const char *lp,struct cmdval *cv)
   switch (*ap) {
     case 'u': getuarg(lp,cv); break; // uint
     case 'e': getearg(ap+1,lp,cv); break; // enum
-    default: warnfln(0,"unknown arg type %c",*ap); cv->err = FLN;
+    default: warnfln(0,"arg '%s' has unknown type %c",arg,*ap); cv->err = FLN;
   }
 }
 
@@ -1125,7 +1131,7 @@ static enum Parsearg do_parseargs(ub4 argc,char *argv[],struct cmdopt *opts,stru
       if (argc < 2) return ret; // optional arg, none available
       else if (*ap == '%' && ap[1] == 'u' && (*argv[1] < '0' || *argv[1] > '9')) return ret;
     } else if (argc < 2) return Pa_noarg;
-    optarg(ap,argv[1],cv);
+    optarg(ap,argv[0],argv[1],cv);
     if (cv->vlen) ret++;
     return ret;
 

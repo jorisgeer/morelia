@@ -23,12 +23,9 @@
 #ifdef Genir
 
 #include <stdarg.h>
-//#include <stddef.h>
 #include <string.h>
 
 #include "base.h"
-
-//#include "chr.h"
 
 #include "fmt.h"
 
@@ -121,7 +118,7 @@ static int mkdefs(void)
     else if (cnt >= 0x80000000) warning("%s invalid count %u",nam,cnt);
     bit = bits[f] = nxbit(cnt);
     Cnt = (1U << bit);
-    info("%s %u %u",nam,cnt,Cnt);
+    info("%-7s %2u %2u",nam,cnt,Cnt);
     res = Cnt - cnt;
     showcnt(nams[f],res);
     msks[f] = Cnt - 1;

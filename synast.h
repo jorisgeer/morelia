@@ -24,6 +24,7 @@ struct synast {
   ub4 *args;
   ub8 *vals;
   ub4 *nhs;
+  ub4 *tis;
   ub4 idcnt,uidcnt,aidcnt;
   ub4 ndcnt,argcnt,valcnt;
   ub4 nscid;
@@ -42,8 +43,6 @@ struct rnode {
   ub2 amask; // count for reps
 
   ub4 ni;
-  ub4 ai;  // argndx
-  ub4 sib; // sibling for rep
 };
 
 extern int syn(struct lexsyn *lsp,struct synast *sa);

@@ -197,6 +197,16 @@ static void msginfo(ub4 shfln)
   globs.shfln = shfln;
 }
 
+//                          0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 4 6 8 0 2 4 6
+static cchar lvlnams[]   = "fatal assert oserror error warn info vrb vrb2 Nolvl";
+static ub1 lvlpos[Nolvl+1] = {0,6,13,21,27,32,37,41,46};
+
+//                         f  a  E  e  w
+static ub1 lvlclr[Info] = {36,35,34,34,33};
+
+#define Clr0 "\x1b[%um"
+#define Clr1 "\x1b[0m"
+
 /* main message printer.
  * if ap is nil, print fmt as %s
  */
@@ -234,22 +244,29 @@ static void msgps(ub4 shfln,enum Msglvl lvl,cchar *srcnam,ub4 lno,ub4 col,cchar 
   }
 
   switch (lvl) {
-    case Fatal:   lvlnam = "fatal";   errcnt++;    break;
-    case Assert:  lvlnam = "assert";  assertcnt++; break;
-    case Oserror: lvlnam = "Error";   oserrcnt++;  break;
-    case Error:   lvlnam = "error";   errcnt++;    break;
-    case Warn:    lvlnam = "warning"; warncnt++;   break;
-    case Info:    lvlnam = "info";                 break;
-    case Vrb:     lvlnam = "vrb";                  break;
-    case Vrb2:    lvlnam = "Vrb";                  break;
-    case Nolvl:   lvlnam = "";                     break;
+    case Fatal:   errcnt++;    break;
+    case Assert:  assertcnt++; break;
+    case Oserror: oserrcnt++;  break;
+    case Error:   errcnt++;    break;
+    case Warn:    warncnt++;   break;
+    case Info:    break;
+    case Vrb:     break;
+    case Vrb2:    break;
+    case Nolvl:   break;
+    default:      errcnt++; lvl = Error;
   }
+  lvlnam = lvlnams + lvlpos[lvl];
 
   if (dotim) pos += mysnprintf(buf,pos,maxlen,"%4u ",(ub4)dt);
 
   if (shfln && shfln != hi32 && (msgopts & Msg_shcoord)) pos += mysnprintf(buf,pos,maxlen,"%6s.%-4u ",shfnam,shlno);
 
-  if (lvl < Info || (msgopts & Msg_lvl)) pos += mysnprintf(buf, pos, maxlen, "%-8s",lvlnam);
+  if (msgopts & Msg_Lvl) {
+    if (lvl < Info) pos += mysnprintf(buf,pos,maxlen," " Clr0 "%c" Clr1 " ",lvlclr[lvl],*lvlnam);
+    else { buf[pos++] = ' '; buf[pos++] = *lvlnam; buf[pos++] = ' '; }
+  }
+
+  if (lvl < Info || (msgopts & Msg_lvl)) pos += mysnprintf(buf,pos,maxlen,"%-8s`z",lvlnam);
 
   if (srcnam) {
     if (msgopts & Msg_fno) {
@@ -257,7 +274,7 @@ static void msgps(ub4 shfln,enum Msglvl lvl,cchar *srcnam,ub4 lno,ub4 col,cchar 
     }
     if (lno && (msgopts & Msg_lno)) {
       if (col && (msgopts & Msg_col) ) pos += mysnprintf(buf,pos,maxlen,"%3u.%-2u: ",lno,col);
-      else pos += mysnprintf(buf, pos, maxlen, "%3u: ",lno);
+      else pos += mysnprintf(buf,pos,maxlen,"%3u: ",lno);
     }
   }
 
@@ -318,11 +335,12 @@ void msglog(cchar *fnam,cchar *fext,cchar *desc)
   ub1 x;
 
   if (logfd >= 0) {
+    info("end %s intermediate code dump",desc);
     msgopts = orgopts;
-    info("done emitting %s intermediate code",desc);
     flsbuf();
     osclose(logfd);
     logfd = -1;
+    info("done emitting %s intermediate code",desc);
   }
   if (fnam == nil || *fnam == 0) {
     return;
@@ -337,7 +355,7 @@ void msglog(cchar *fnam,cchar *fext,cchar *desc)
   logfd = oscreate(path);
   if (logfd == -1) { oserror("cannot create %s: %m",path); return; }
   orgopts = msgopts;
-  x = (ub1)msgopts & ~ (ub1)(Msg_shcoord|Msg_tim|Msg_fno);
+  x = (ub1)msgopts & ~ (ub1)(Msg_shcoord|Msg_tim|Msg_fno|Msg_Lvl);
   msgopts = (enum Msgopts)x;
   info("%s - intermediate %s code dump\n",path,desc);
 }
@@ -389,7 +407,7 @@ void setsrcmfile(struct fnaminf *mf,ub4 *lntab,ub4 lncnt,ub4 len)
  */
 static const char *getsrcpos(ub4 fpos,ub4 *plno,ub4 *pcol,ub4 *pparfpos)
 {
-  ub4 n,pos,lno,col,fpos0;
+  ub4 n,pos,len,lno,col,fpos0;
   struct fnaminf *sp,**spp;
   ub4 lncnt=0,*lntab=nil;
   ub4 filcnt;
@@ -424,18 +442,24 @@ static const char *getsrcpos(ub4 fpos,ub4 *plno,ub4 *pcol,ub4 *pparfpos)
   sp = spp[n];
   lntab = sp->lntab;
   lncnt = sp->lncnt;
+  len = sp->len;
   if (lntab == nil || linonly) { *plno = fpos; return sp->path + sp->incdir; } // pass line numbers directly if no lntab
-  if (lncnt == 0) lno = 0;
-  else if (lncnt == 1) lno = 0;
+
+  if (pos > len) {
+    warnfln(FLN,"invalid pos %u above %u",pos,len);
+    pos = len;
+  }
+  if (lncnt < 2) lno = 0;
   else {
     lno = bsearch4(lntab,lncnt,pos,FLN);
-    while (lno && lntab[lno] >= pos) lno--;
+    while (lno && lntab[lno] > pos) lno--;
   }
   if (lno) {
     if (pos < lntab[lno]) { errorfln(FLN,0,"invalid pos %u below line %u org %u",pos,lno,lntab[lno]); return sp->name; }
     col = pos - lntab[lno];
   } else col = pos;
   col++;
+  lno++;
   *plno = lno; *pcol = col;
 
   *pparfpos = sp->parfpos;
