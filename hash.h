@@ -11,9 +11,9 @@
 
 // murmur3 https://github.com/aappleby/smhasher  last changed 9 Jan 2016
 static inline unsigned int scramble(unsigned int k) {
-  k *= 0xcc9e2d51;
+  k *= 0xcc9e2d51; // c1
   k = (k << 15) | (k >> 17);
-  k *= 0x1b873593;
+  k *= 0x1b873593; // c2
   return k;
 }
 
@@ -41,9 +41,12 @@ static unsigned int hashalstr(const unsigned char *s,unsigned int len,unsigned i
   switch(len & 3) {
   case 3: m = s[2] << 16; Fallthrough;
   case 2: m ^= s[1] << 8; Fallthrough;
-  case 1: m ^= s[0]; Fallthrough;
+  case 1: m ^= s[0]; h ^= scramble(m); Fallthrough;
   case 0:
+
     h ^= len;
+
+    // fmix32
     h ^= h >> 16;
     h *= 0x85ebca6b;
     h ^= h >> 13;

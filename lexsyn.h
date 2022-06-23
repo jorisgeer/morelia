@@ -19,12 +19,12 @@
    If not, see http://www.gnu.org/licenses.
  */
 
-#define Tkgrps 16
+#define Tkgrps 8
 
 struct lexsyn {
   ub4 tkcnt,tbcnt;
   const ub1 *toks; // enum Token tok.h
-  const ub1 *atrs;
+  const ub2 *atrs;
   const ub8 *bits;
   const ub4 *fpos;
 
@@ -53,22 +53,43 @@ struct lexsyn {
   const ub1 **incdirs;
 };
 
-#define Tkpad 10
+#define Idlen 32
 
-#define Idlen_2   0x80
-#define Idlen_n   0x81
+#define Tkpad 10
 
 #define Idpool    0x3fffffff
 
-#define Idctl_blt 0x82
-#define Idctl_dun 0x83
-#define Idctl_cls 0x84
+#define Lxop2 0x200
+#define Lxoe  0x100
 
-#define Slit_len 0x80
+#define La_bit 12
+#define La_msk 0xfff
 
-enum Nlitatr { Ilit4=0x80,Ilit4n,Flit8,Ilita,Flita,Flit0 };
+//      La_id4s  0
+#define La_idprv 0x1000
 
-enum Packed8 Lop { Lolit,Lorelor,Loreland,Lone,Loeq,Loshl,Loshr,Lonot,Loxor,Loneg,Loor,Loand,Loumin,Loupls,Lomin,Lopls,Lomul,Lodiv,Lomod,Loas,Lolt,Logt,Lole,Loge,Loqst,Locol,Locom,Locnt };
+#define La_id1   0x2000
+#define La_id2   0x4000
+#define La_id4   0x6000
+
+#define La_idblt 0x8000
+#define La_iddun 0xa000
+#define La_id_   0xc000
+
+//      La_ilit2  0
+#define La_ilit2n 0x1000
+#define La_ilit4  0x2000
+#define La_ilit4n 0x3000
+#define La_flit8  0x4000
+#define La_flit8n 0x5000
+#define La_ilita  0x6000
+#define La_flita  0x8000
+
+//      La_slit1 0
+#define La_slit2 0x1000
+#define La_slit4 0x2000
+#define La_slits 0x3000
+#define La_slit  0x4000
 
 enum Inctype { Inone,Isys,Iuser };
 

@@ -101,6 +101,11 @@ static const enum Esc esctab[128] = {
 };
 #endif
 
+static const ub1 slitpfxs[26] = {
+  ['f' - 'a'] = 2,
+  ['r' - 'a'] = 1
+};
+
 #undef ice
 #define ice(fpos,fmt,...) lxice(FLN,fpos,fmt,__VA_ARGS__)
 
@@ -232,6 +237,27 @@ static Noret void lxerror(ub4 ln,ub4 col,ub2 specln,char c,enum Lxerror ec)
 
   vpmsg(FLN,Fatal,srcnam,ln,col,buf,nil,nil);
   doexit(1);
+}
+
+static void lxwarn(ub4 ln,ub4 col,ub2 specln,char c,enum Lxerror ec)
+{
+  char buf[1024];
+  ub4 pos=0,blen = 1024;
+  cchar *es = "";
+
+  switch (ec) {
+#ifdef Lxercnt
+  case Lxe_str_nl: es = "newline in string"; break;
+#endif
+  case Lxe_count: break;
+  }
+
+  if (pass == 2) pos = mysnprintf(buf,0,blen,"pass 2 ");
+
+  pos += mysnprintf(buf,pos,blen,"unexpected chr '%s' : %s",chprint(c),es);
+  if (verbose) pos += mysnprintf(buf,pos,blen," %s.%u",specnam,specln);
+
+  vpmsg(FLN,Warn,srcnam,ln,col,buf,nil,nil);
 }
 
 #ifdef __clang__
@@ -391,26 +417,28 @@ static void mkidhash(ub4 estcnt,ub4 cnt)
   info("%u entry id hash from u/id %u/%u",idhshlen,estcnt,cnt);
 }
 
-static ub4 idcheck(ub4 nam,ub2 len,ub4 v)
+static ub4 idcheck(const ub1 *nam,ub2 len,ub4 v)
 {
   ub4 x = idhsh[v];
   ub4 np,id;
 
   if (x == 0) { // slot free
     id = uidcnt++;
-    if (id >= idtablen) ice(hi32,"id '%.*s' exceeds %u",len,idnampool+nam,id);
+    if (id >= idtablen) ice(hi32,"id '%.*s' exceeds %u",len,nam,id);
     idhsh[v] = id;
-    np = idnampos;
 //    vrb("add '%s'",idnampool+idnampos);
-    idnampos = align4(nam + 1);
+    np = idnampos = align4(idnampos);
+    memcpy(idnampool+np,nam,len);
     idhshcnt++;
     if (len > idnmax) idnmax = len;
     idtab[id] = np;
     info("add id %u nid %u",id,np);
+    idnampos = np + len;
+    idnampool[idnampos++] = 0;
     return id; // new
   } else {
     np = idtab[x];
-    if (samestr1(idnampool,np,idnampos,len)) return x; // existing: common
+    if (idnampool[np+len] == 0 && samestr(idnampool+np,nam,len)) return x; // existing: common
     else {
       idhshmis++;
       return hi32;
@@ -419,17 +447,14 @@ static ub4 idcheck(ub4 nam,ub2 len,ub4 v)
 }
 
 // get or if none insert id. returns idnid.idid
-static ub4 idgetadd(ub4 nam,ub4 hc)
+static ub4 idgetadd(const ub1 *nam,ub2 len,ub4 hc)
 {
   ub4 v,v0;
   ub4 x;
   ub4 hc2;
-  ub2 len = nam - idnampos;
 
   hc = (hc >> idhshbit) ^ hc;
   v = hc & idhshmask;
-
-  idnampool[nam] = 0;
 
   x = idcheck(nam,len,v);
   if (x != hi32) return x;
@@ -645,12 +670,11 @@ static ub4 slitgetadd(ub1 *pool,ub4 nam1)
 }
 
 #if Kwcnt > 0
-static inline enum token lookupkw(ub1 len,ub4 hc)
+static inline enum token lookupkw(const ub1 *nam,ub1 len,ub4 hc)
 {
   ub1 x,m;
   ub4 ndx;
   enum token kw;
-  const ub1 *nam = idnampool+idnampos;
 
   if (len > hikwlen) return t99_count;
   else if (len >= mikwlen) m = 0xf0;
@@ -673,13 +697,12 @@ static inline enum token lookupkw(ub1 len,ub4 hc)
 #endif
 
 #ifdef Bltcnt
-static inline enum Bltin lookupblt(ub1 len,ub4 hc)
+static inline enum Bltin lookupblt(const ub1 *nam,ub2 len,ub4 hc)
 {
   ub1 ndx,x,m;
   enum Bltin bt;
-  const ub1 *nam = idnampool+idnampos;
 
-  if (len >= hibltlen) return B99_count;
+  if (len > hibltlen) return B99_count;
 
   ndx = (hc >> Blthshbit) ^ hc;
 
@@ -700,25 +723,50 @@ static inline enum Bltin lookupblt(ub1 len,ub4 hc)
   else return B99_count;
 }
 #else
-  #define lookupblt(len,hc) B99_count
+  #define lookupblt(nam,len,hc) B99_count
 #endif
 
 #ifdef Duncnt
-static inline enum Dunder lookupdun(ub1 len,ub4 hc)
+static inline enum Dunder lookupdun(const ub1 *nam,ub2 len)
 {
+  ub4 hc;
   ub1 ndx,x,m;
   enum Dunder dun;
-  const ub1 *nam = idnampool+idnampos;
+  ub1 albuf[Idlen];
+  const ub1 *idp;
 
-  if (len >= hidunlen) return D99_count;
+  if (len > hidunlen) return D99_count;
 
-  hc = (hc >> Dunhshbit) ^ hc;
+  if ( (ub8)nam & 3) {
+    memcpy(albuf,nam,len);
+    idp = albuf;
+  } else idp = nam;
 
-  ndx = (hc >> Hshdshift) & Dunhshmask;
-  dun = dunhsh[ndx];
+  ub4 seed,mask;
+  ub2 bit,shift;
+  const enum Dunder *hsh;
+
+  if (*nam & 1) {
+    seed = Hshd1seed;
+    bit = Dun1hshbit;
+    shift = Hshd1shift;
+    mask = Dun1hshmask;
+    hsh = dun1hsh;
+  } else {
+    seed = Hshd0seed;
+    bit = Dun0hshbit;
+    shift = Hshd0shift;
+    mask = Dun0hshmask;
+    hsh = dun0hsh;
+  }
+  hc = hashalstr(idp,len,seed);
+  hc = (hc >> bit) ^ hc;
+  ndx = (hc >> shift) & mask;
+  dun = hsh[ndx];
+
   if (dun == D99_count) return D99_count;
 
-  if (dunnamlens[dun] == len && samestr(nam,dunnampool + dunnamposs[dun],len)) return dun;
+  if (dun0namlens[dun] == len && samestr(idp,dun0nampool + dun0namposs[dun],len)) return dun;
   else return D99_count;
 }
 #else
@@ -811,18 +859,17 @@ enum Slitctl { Slit_none,Slit_f=1,Slit_r=2,Slit_l=4,Slit_b=8,Slit_u=16 };
 
 static ub4 tkstats[T99_count];
 
-static void doemit(struct lexsyn *lsp,cchar *name)
+static void doemit(struct lexsyn *lsp,cchar *name,bool emit,bool log)
 {
   const enum Token *tks = lsp->toks;
-  const ub1 *atrs = lsp->atrs;
+  const ub2 *atrs = lsp->atrs;
   const ub8 *bits = lsp->bits;
   const ub4 *fpos = lsp->fpos;
   ub4 tkcnt = lsp->tkcnt;
   const ub1 *slitpool = lsp->slitpool;
 
-  bool emit = (globs.emit & Lexpas);
   enum Token tk=0;
-  ub1 atr;
+  ub2 atr,at;
   ub4 dn,bn=0;
   ub8 x8=0;
   ub4 x4,np;
@@ -835,8 +882,11 @@ static void doemit(struct lexsyn *lsp,cchar *name)
   char c;
   cchar *str;
 
-  if (emit) msglog(name,"tks","lex");
-  for (dn = 0; dn < tkcnt; dn++) {
+  if ( (emit | log) == 0) return;
+
+  if (emit && name) msglog(name,"tks","lex");
+
+  for (dn = 1; dn < tkcnt; dn++) {
     tk = tks[dn];
     atr = atrs[dn];
     fps = fpos[dn];
@@ -845,49 +895,61 @@ static void doemit(struct lexsyn *lsp,cchar *name)
     pos = mysnprintf(buf,0,blen,"%3u %-10s",dn,tknam(tk));
 
 #ifdef Emitdetail
+    at = atr & ~La_msk; atr &= La_msk;
     switch (tk) {
-    case Tid:   if (atr < Idlen_2) {
-                  buf[pos++] = id1inv[atr];
-                } else {
+    case Tid:
+      str = nil;
+      switch(at) {
+      case 0: x4 = atr; str = idnnam(x4); break; // id4s
+      case La_id1: buf[pos++] = id1inv[atr]; break;
+      case La_id2: id2nam(atr,buf+pos); pos += 2; break;
+      case La_id4: x4 = bits[bn++]; str = idnnam(x4); break;
+#ifdef Bltcnt
+      case La_idblt: pos += mysnprintf(buf,pos,blen,"blt %.*s",bltnamlens[atr],bltnampool + bltnamposs[atr]); break;
+#endif
+#ifdef Duncnt
+      case La_iddun: pos += mysnprintf(buf,pos,blen,"dun %.*s",dun0namlens[atr],dun0nampool + dun0namposs[atr]); break;
+#endif
+      case La_id_: buf[pos++] = '_'; break;
+      }
+      if (str) pos += mysnprintf(buf,pos,blen,"%s",str);
+    break;
+
+    case Tnlit:
+                if (at == La_flit8) {
                   x8 = bits[bn++];
-                  if (atr == Idlen_n) pos += mysnprintf(buf,pos,blen,"%s",idnnam(x8));
-                  else { id2nam(x8,buf + pos); pos += 2; }
-                }
-                break;
-    case Tnlit: if (atr < 10) buf[pos++] = atr + '0';
-                else if (atr < Ilit4) pos += mysnprintf(buf,pos,blen,"%u",atr);
-                else {
+                  pos += mysnprintf(buf,pos,blen,"flt %lx",x8);
+                } else if (at == La_ilita || at == La_flita) {
                   x4 = bits[bn++];
-                  if (atr == Ilit4) pos += mysnprintf(buf,pos,blen,"%u",x4);
-                  else if (atr == Flit8) pos += mysnprintf(buf,pos,blen,"flt %x",x4);
-                  else if (atr >= Ilita) pos += mysnprintf(buf,pos,blen,"%s",nlitpool + x4);
+                  pos += mysnprintf(buf,pos,blen,"%s",nlitpool + x4);
+                } else {
+                  if (at == 0) x4 = atr;
+                  else x4 = bits[bn++];
+                  pos += mysnprintf(buf,pos,blen,"%u",x4);
                 }
-                break;
-    case Tslit: if (atr < Slit_len) pos += mysnprintf(buf,pos,blen,"'%s'",chprint(atr));
-                else {
-                  x4 = bits[bn++];
-                  len = atr & ~Slit_len;
-                  if (len > 3) {
-                    l1 = slitids[x4] >> 32;
-                    np = slitids[x4] & hi32;
-                    str = chprintn(slitpool + np,min(l1,32));
-                  } else {
-                    *(ub4 *)sbuf = x4;
-                    buf[pos++] = sbuf[0];
-                    buf[pos++] = sbuf[1];
-                    if (len == 3) buf[pos++] = sbuf[2];
-                    buf[pos] = 0;
-                    str = chprintn(sbuf,len);
-                  }
-                  pos += mysnprintf(buf,pos,blen,"%3x.%u '%s'",x4,len,str);
+    break;
+
+    case Tslit:
+                if (at == 0) pos += mysnprintf(buf,pos,blen,"'%s'",chprint(atr)); // slit 1
+                else if (at == La_slit2) pos += mysnprintf(buf,pos,blen,"'%s%s'",chprint(atr >> 8),chprint(atr & 0xff));
+                else if (at == La_slit4) {
+                  len = atr;
+                  pos += mysnprintf(buf,pos,blen,"'%s'",chprintn( (const ub1 *)(bits + bn),len)); bn++;
+                } else {
+                  if (at == La_slits) x4 = atr;
+                  else x4 = bits[bn++];
+                  l1 = slitids[x4] >> 32;
+                  np = slitids[x4] & hi32;
+                  pos += mysnprintf(buf,pos,blen,"%3x.%u '%s'",x4,atr,chprintn(slitpool + np,min(l1,32)));
                 }
-                break;
-    case Tpm:   c = atr ? '-' : '+'; break;
-    case Top:   c = atr; break;
+    break;
+    case Top:   c = atr & 0xff; buf[pos++] = c;
+                if (atr & Lxop2) buf[pos++] = c;
+                if (atr & Lxoe) buf[pos++] = '=';
+    break;
     default:    break;
     }
 #endif
-    if (c) buf[pos++] = c;
     sinfo(fps,"%.*s",pos,buf);
   }
   sinfofln(0,0,"EOF");
@@ -898,6 +960,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 {
   int rv = 0;
   ub4 len;
+  ub2 len2;
 
   enum Slitctl slitctl=0,fstrctl=0;
   bool litbin = 1;
@@ -907,10 +970,11 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   enum Token tk=0;
   enum Bltin blt;
   enum Dunder dun;
+
   ub4 tkcnt=0;
   void *tkbas=nil;
   ub1 *tks=nil;
-  ub1 *atrs=nil;
+  ub2 atr,*atrs=nil;
   ub8 *bits=nil;
   ub4 fps,*fpos=nil;
   struct mempart tkpart[4];
@@ -920,8 +984,13 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   // str lits
   ub1 *slitpool=nil;
-  ub4 slitx=0;
+  ub4 slitx=0,slitpx=0;
+  ub4 slitppos=0;
   ub4 idxpos=0;
+
+  // ids
+  ub1 albuf[Idlen];
+  const ub1 *idp;
 
   // indent
   static ub2 dentst[Dent];
@@ -947,7 +1016,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   timeit(&T1,nil);
 
   ub1 c,prvc1,prvc2;
-  ub4 dn = 0,bn = 0;
+  ub4 dn = 1,bn = 0;
   ub4 n = 0;
 
   ub4 idnplen=0;
@@ -975,16 +1044,17 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   idsketch = 0;
 
   memset(id2chr,0,256);
+  memset(albuf,0,Idlen);
 
   ub1 t=0,u;
 
   ub1 Q = 0;
   ub4 N = 0;
-  ub1 R0 = 0;
+  ub1 R0 = 0,R1 = 0,R2 = 0;
   ub1 sign = 0;
 
   ub4 id=0;
-  ub1 x1;
+  ub1 x1,x11;
   ub4 x4;
   ub8 x8;
 
@@ -1012,8 +1082,11 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   pass = 1;
 
   if (slen > 3 && sp[0] == '#' && sp[1] == '!') { // skip shebang
-    n += 2;
-    while(n < slen && sp[n] != '\n') n++;
+    while (n < slen && sp[n] != '\n') n++;
+    if (n + 1 >= slen) {
+      info("%s is an empty shebang",lsp->name);
+      return 0;
+    }
   }
 
   infofln(FLN,"+lex1");
@@ -1067,6 +1140,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   if (idcnt) {
     showcnt("2ident / kwd",idcnt);
+    while (idhilen < Idlen && albuf[idhilen]) idhilen++;
     if (idnplen >= Idpool) ice(n,"ID literal pool exceeds max %u`B",Idpool);
     info("idpool %u`B max len %u",idnplen,idhilen);
     idnplen += 5 * (idcnt+1); // align + 0-term
@@ -1104,10 +1178,10 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   tkpart[1].nel = tkpart[2].nel = tkpart[3].nel = tkcnt+Tkpad;
   tkpart[1].siz = 4;
   tkpart[2].siz = 1;
-  tkpart[3].siz = 1;
+  tkpart[3].siz = 2;
 
   tkpart[0].siz = 8;
-  tkpart[0].nel = xcnt;
+  tkpart[0].nel = bitcnt;
 
   tkbas = allocset(tkpart,4,Mnofil,"lex tokens",nextcnt);
   bits = tkpart[0].ptr;
@@ -1115,7 +1189,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   tks = tkpart[2].ptr;
   atrs = tkpart[3].ptr;
 
-  if (tkpart[0].ismmap == 0) memset(atrs,0,tkcnt);
+// ?  if (tkpart[0].ismmap == 0) memset(atrs,0,tkcnt * 2);
 
   nlittop = nlitpos; nlitpos = 0;
   if (nlittop) {
@@ -1149,7 +1223,8 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   setsrcmfile(mf,lntab,lncnt,n);
 
   n = 0;
-  dn = bn = 0;
+  dn = 1;
+  bn = 0;
   l = 0;
 
   fxp = 0;
@@ -1222,7 +1297,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
 #if 0
   kwcnt = 0;
-  for (dn = 0; dn < tkcnt; dn++) {
+  for (dn = 1; dn < tkcnt; dn++) {
     tk = tks[dn];
     tkstats[tk]++;
   }
@@ -1274,7 +1349,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   memcpy(lsp->tkgrps,tkgrps,sizeof(tkgrps));
 
-  if ( (globs.emit & 1) | (globs.log & 1) ) doemit(lsp,mf->name);
+  doemit(lsp,mf->name,globs.emit & 1,globs.log & 1);
 
   if (bolvl) {
     sinfofln(hi32,bolvls[0],"opening '%c' here",bolvlc[0]);
@@ -1368,7 +1443,12 @@ int lexfile(ub4 fln,cchar *path,cchar *parpath,enum Inctype inc,struct lexsyn *l
     return 1;
   }
   osclose(fd);
-//  if (nr != slen) { error("partial read %'uB of %'uB of %s",(ub4)nr,(ub4)slen,path); return 1; }
+  if (nr != slen) { error("partial read %'uB of %'uB of %s",(ub4)nr,(ub4)slen,path); return 1; }
+
+  if (*sp == 0xef && slen > 2 && sp[1] == 0xbb && sp[2] == 0xbf) { // skip utf8 bom
+    sp += 3; slen -= 3;
+    if (slen == 0) { info("%s is an empty utf-8 bom",path); return 0; }
+  }
 
   memset(sp+slen,0,xlen-slen);
   sp[slen++] = '\n';

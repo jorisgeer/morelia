@@ -23,7 +23,7 @@ author joris
 language minipython
 requires genlex 1.0
 
-eof sq
+eof so
 
 token
 # group 0 - storable terms
@@ -31,10 +31,9 @@ token
   nlit
   slit
 
-# group 1 - operators
-  ast 1
-  pm 1
+# group 1 - operators and (aug)assign
   op 1
+  aas 1
 
 # group 2 - scope in
   co 2
@@ -46,18 +45,19 @@ token
   rc 4
   so 4
   sc 4
-  qas 4
-#  aas
+
   das 4
-#  mulas
   colon 4
   sepa 4
   comma 4
 #  dot
-#  exp
 
 set
-  af _a-zA-Z
+  aa a
+  ii i
+  oo o
+  uu _
+  af b-hj-np-zA-Z
   nm 0123456789
   ws \20
   ht \09
@@ -75,25 +75,20 @@ set
   sm ;
   ca ,
   dt .
-  pp +
-  mm -
-  st *
   eq =
-  op @%&^|
-  o1 /
-  o4 <
-  o5 >
-  o9 !
+  pm +-
+  o1 @%&^|*~
+  o2 <>!
   EOF \00
  +an _a-zA-Z+nm
  +ee eE
- +oo oO
+ +oO oO
  +xx xX
  +hx abcdefABCDEF
 
 keyword
-#  and
-#  as
+#  and -> && op
+  as
   def
 #  del
 #  elif
@@ -102,20 +97,199 @@ keyword
 #  from
   if
 #  import
-#  in
-#  is
-#  not
-#  or
+  in
+  is
+  not
+#  or -> || op
 #  pass
 #  return
   while
 #  with
   break|continue=ctlxfer
 
-builtin
+`Bbuiltin
   False
   None
   True
+.
+  id
+  type
+  NotImplemented
+  Ellipsis
+  numbers
+  Number
+  Integral
+  Real
+  Complex
+  int
+  bool
+  float
+  complex
+.
+  abs
+  alter
+  all
+  any
+  anext
+  ascii
+  bin
+  breakpoint
+  bytearray
+  bytes
+  callable
+  chr
+  classmethod
+  compile
+  delatytr
+  dict
+  dir
+  divmod
+  enumerate
+  eval
+  exec
+  filter
+  format
+  frozenset
+  getattr
+  globals
+  hasattr
+  hash
+  help
+  hex
+  input
+  isinstance
+  issubclass
+  iter
+.
+  send
+  throw
+  close
+
+`Ddunder
+  doc
+  name
+  file
+  qualname
+  module
+  defaults
+  code
+  globals
+  dict
+  closure
+  annotations
+  kwdefaults
+.
+  self
+  func
+  new
+  init
+  del
+  repr
+  str
+  bytes
+  format
+  lt
+  le
+  eq
+  ne
+  gt
+  ge
+  hash
+  bool
+.
+  getattr
+  getattribute
+  setattr
+  delattr
+  dir
+  class
+.
+  get
+  set
+  delete
+  slots
+  init_subclass
+  set_name
+  instancecheck
+  subclasscheck
+  class_getitem
+  call
+  len
+  length_hint
+  getitem
+  setitem
+  delitem
+  missing
+  iter
+  reversed
+  contains
+.
+  add
+  sub
+  mul
+  matmul
+  truediv
+  floordiv
+  mod
+  divmod
+  pow
+  lshift
+  rshift
+  and
+  xor
+  or
+.
+  radd
+  rsub
+  rmul
+  rmatmul
+  rtruediv
+  rfloordiv
+  rmod
+  rdivmod
+  rpow
+  rlshift
+  rrshift
+  rand
+  rxor
+  ror
+.
+  iadd
+  isub
+  imul
+  imatmul
+  itruediv
+  ifloordiv
+  imod
+  idivmod
+  ipow
+  ilshift
+  irshift
+  iand
+  ixor
+  ior
+.
+  neg
+  pos
+  abs
+  invert
+  complex
+  int
+  float
+  index
+  round
+  trunc
+  floor
+  ceil
+  enter
+  exit
+  match_args
+.
+  await
+  aiter
+  anext
+  aenter
+  aexit
 
 action
 
@@ -125,9 +299,10 @@ action
 ilit
 1 ilitcnt++;
 2 if (litbin) {
-2   if (u4v < 0x3f) atrs[dn] = u4v | (sign << 6); else { atrs[dn] = sign ? Ilit4n : Ilit4; bits[bn++] = u4v; }
+2   if (u4v < La_msk) atrs[dn] = u4v | (sign << La_bit);
+2   else { atrs[dn] = La_ilit4 | (sign << La_bit); bits[bn++] = u4v; }
 2 } else {
-2   bits[bn++] = nlitpos; atrs[dn] = Ilita;
+2   bits[bn++] = nlitpos; atrs[dn] = La_ilita;
 2   memcpy(nlitpool+nlitpos,sp+N,n-N); nlitpool[nlitpos++] = 0;
 2   nlitpos += n-N;
 2   litbin = 1;
@@ -142,10 +317,10 @@ flit
 1 flitcnt++;
 2 if (litbin && fxp > fdp) fxp -= fdp; else litbin = 0;
 2 if (litbin) {
-2   atrs[dn] = Flit8;
-2   bits[bn++] = ((ub8)sign << 63) | ((ub8)fxs << 62) | ((ub8)fxp << 54) | u4v;
+2   atrs[dn] = La_flit8 | (sign << La_bit);
+2   bits[bn++] = ((ub8)fxs << 63) | ((ub8)fxp << 54) | u4v;
 2 } else {
-2   bits[bn++] = nlitpos; atrs[dn] = Flita;
+2   bits[bn++] = nlitpos; atrs[dn] = La_flita;
 2   memcpy(nlitpool+nlitpos,sp+N,n-N); nlitpool[nlitpos++] = 0;
 2   nlitpos += n-N; litfpi=0; litbin = 1;
 2 }
@@ -157,17 +332,15 @@ doflitfr
 2 if (litbin && u4v < D32max) u4v = u4v * 10 + c - '0'; else litbin = 0;
 2 if (litbin && fdp < E16max) fdp++; else litbin = 0;
 
-doslit0
-2 slitx=slitpos; slitpool[slitx++] = c;
-
-doslit
-2 slitpool[slitx++] = c;
-
 # ----------------------
 # \xx in string literal
 # ----------------------
 `A doesc
-  c = sp[n];
+ c = sp[n];
+ if (R0 == 0) { // raw
+    if (c == '\n') { lntab[l] = n; nlcol = n++; }
+    else if (c == Q) { slitpool[slitx++] = '\\'; slitpool[slitx++] = Q; n++; }
+ } else {
   x1 = esctab[c];
   switch(x1) {
   case Esc_nl: lntab[l] = n; nlcol=n; break;
@@ -175,7 +348,7 @@ doslit
   case Esc_o: x1=doesco(sp,n); slitpool[slitx++] = x1; n += 3; break;
   case Esc_x: x1=doescx(sp,n); n += 2;
               if (x1 < 0x80 || (slitctl & Slit_b) ) slitpool[slitx++] = x1;
-              else {
+              else { // utf8
                 slitpool[slitx]   = 0xc0 | (x1 >> 6);
                 slitpool[slitx+1] = 0x80 | (x1 & 0x3f);
                 slitx += 2;
@@ -187,97 +360,172 @@ doslit
   case Esc_N: if (slitctl & Slit_b) {
                 swarn(n,"unrecognised escape sequence '\\%s'",chprint(c));
                 slitpool[slitx] = '\\';
-                slitpool[slitx+1] = 'c';
+                slitpool[slitx+1] = c;
                 n += 2; slitx += 2;
               } else n=doescu(sp,n,slitpool,&slitx,x1);
               break;
 .
   case Esc_inv: swarn(n,"unrecognised escape sequence '\\%s'",chprint(c));
                 slitpool[slitx] = '\\';
-                slitpool[slitx+1] = 'c';
+                slitpool[slitx+1] = c;
                 n += 2; slitx += 2;
                 break;
 .
   default:    slitpool[slitx++] = x1; n++;
   }
+ }
+
+# ----------------------
+# start of string literal
+# ----------------------
+slit0
+  if (tks[dn-1] == Tslit) { // merge dup
+    dn--;
+    slitx = slitpx;
+    slitpos = slitppos;
+  } else {
+    slitx = slitpos;
+  }
 
 # ----------------------
 # end of string literal
 # ----------------------
-slit
-  R0=0;
-2 len = slitx - slitpos;
-2 switch(len) {
-2 case 1: x1 = slitpool[slitpos]; if (x1 < Slit_len) { atrs[dn] = x1; break; } Fallthrough
-2 case 2:
-2 case 3: bits[bn] = *(ub4 *)(slitpool + slitpos);
-2         atrs[dn] = len | Slit_len;
-2         break;
-2 default:
-2   id = slitgetadd(slitpool,slitx);
-2   bits[bn++] = id;
-2   atrs[dn] = min(len,Slit_len - 1) | Slit_len;
-2 }
-.
-1 len = n - N;
-1 switch(len) {
-1 case 1: slit1cnt++; break;
-1 case 2: slit2cnt++; break;
-1 case 3: slit3cnt++; break;
-1 default:
-1   if (len < Slitint) slitcnt++; else slitxcnt++;
-1   slitpos += len;
-1 }
+.slit2
+  R0=R1=0;
+  len = slitx - slitpos;
+  slitpx = slitx;
+  switch(len) {
+  case 0: atrs[dn] = 0; break;
+  case 1: atrs[dn] = slitpool[slitpos]; break;
+  case 2: x1 = slitpool[slitpos]; x11 = slitpool[slitpos+1];
+          atr = x1 | (x11 << 8) | La_slit2;
+          if (atr >= La_msk) {
+            bits[bn++] = *(ub4 *)(slitpool + slitpos); atrs[dn] = La_slit4 | len;
+          } else atrs[dn] = atr;
+          break;
+  case 3:
+  case 4: bits[bn++] = *(ub4 *)(slitpool + slitpos); atrs[dn] = La_slit4 | len; break;
+  default:
+    slitppos = slitpos;
+    id = slitgetadd(slitpool,slitx);
+    if (id < La_msk) atrs[dn] = id | La_slits;
+    else { bits[bn++] = id; atrs[dn] = La_slit | len; }
+  }
+
+.slit1
+  R0=R1=0;
+  len = n - N;
+  slitpos += len;
+  switch(len) {
+  case 1: slit1cnt++; break;
+  case 2: slit2cnt++; break;
+  case 3: slit3cnt++; break;
+  default:
+    if (len < Slitint) slitcnt++; else slitxcnt++;
+  }
 
 # ----------------------
 # ident or kwd
 # ----------------------
-id1
-1 id1cnt++;
-2 id = id1getadd(prvc1);
-2 atrs[dn] = id;
 
+# 2 char private
+id2prv
+1 id2cnt++;
+1 id2chr[sp[N]] = 1;
+1 id2chr[sp[N+1]] = 2;
+2 id = id2getadd(sp[N],sp[N+1]);
+2 atrs[dn] = La_id2 | La_idprv | id;
+
+# 2 char
 id2
-  kwd = lookupkw2(prvc1,prvc2);
-  if (kwd < T99_kwd) {
-1   dn++;
-2   tk = kwd;
-  } else {
-1   id2cnt++;
-1   id2chr[prvc1] = 1;
-1   id2chr[prvc2] = 2;
-2   tk = Tid;
-2   id = id2getadd(prvc1,prvc2);
-2   bits[bn++] = id;
-2   atrs[dn] = Idlen_2;
-  }
-2 tks[dn] = tk; fpos[dn] = n;
-2 dn++;
+1 id2cnt++;
+1 id2chr[prvc1] = 1;
+1 id2chr[prvc2] = 2;
+2 id = id2getadd(prvc1,prvc2);
+2 atrs[dn] = La_id2 | id;
 
+# 3+ char
 id
-1 len = n - N;
-1 hc = hashalstr(sp+N,len,Hshseed);
-2 len = idxpos - idnampos;
-2 hc = hashalstr(idnampool+idnampos,len,Hshseed);
-1 if (len > idhilen) idhilen = len;
+  len = n - N;
+1 if (len >= Idlen) lxerror(l,0,`L,c,Lxe_count); // lx_error(l,0,`L,"id '%.*s' len %u exceeds %u",16,sp+N,len,Idlen);
+  len2 = len;
+  if (N & 3) {
+    memcpy(albuf,sp+N,len2);
+    idp = albuf;
+  } else idp = sp+N;
+  hc = hashalstr(idp,len2,Hshseed);
 1 idcnt++;
-1 idnplen += len;
+1 idnplen += len2;
 1 exp_first0(hc);
-2 kw = lookupkw(len,hc);
+2 kw = lookupkw(idp,len2,hc);
 2 if (kw < t99_count) {
 2   if (kw < (enum token)T99_mrg) tk = kw; else { atrs[dn] = kw; tk = kwhshmap[kw]; tkgrps[0]++; }
 2 } else {
 2   tk = Tid;
-2   blt = lookupblt(len,hc);
-2   if (blt < B99_count) { bits[bn++] = blt; atrs[dn] = Idctl_blt; bltcnt++; }
+2   blt = lookupblt(idp,len2,hc);
+2   if (blt < B99_count) { atrs[dn] = blt | La_idblt; bltcnt++; }
 2   else {
-2     x4 = idgetadd(idxpos,hc);
-2     bits[bn++] = x4;
-2     atrs[dn] = Idlen_n;
+2     x4 = idgetadd(idp,len2,hc);
+2     if (x4 < La_idprv) atrs[dn] = x4;
+2     else { bits[bn++] = x4; atrs[dn] = La_id4; }
 2   }
 2 }
 2 tks[dn] = tk; fpos[dn] = n;
 2 dn++;
+
+# __*__ = dunder or __* = class-private
+`D dunder
+  len = n - N;
+  if (len > 2 && sp[n-1] == '_' && sp[n-2] == '_') { // dunder
+    len2 = len - 2;
+    if (len == 2) dun = lookupdun2(sp[N],sp[N+1]);
+    else dun = lookupdun(sp+N,len2);
+    if (dun == D99_count) lxwarn(l,0,`L,c,Lxe_count);
+    atrs[dn] = dun | La_iddun;
+  } else { // class-private
+1   if (len >= Idlen) lxerror(l,0,`L,c,Lxe_count);
+    len2 = len;
+    if (N & 3) {
+      memcpy(albuf,sp+N,len2);
+      idp = albuf;
+    } else idp = sp+N;
+    hc = hashalstr(idp,len2,Hshseed);
+1   exp_first0(hc);
+2   x4 = idgetadd(idp,len2,hc);
+2   if (x4 < La_idprv) atrs[dn] = x4 | La_idprv;
+2   else { bits[bn++] = x4; atrs[dn] = La_id4 | La_idprv; }
+  }
+
+`d dunder
+  atrs[dn] = 0;
+
+# ----------------------
+# slit prefix
+# ----------------------
+dopfx1
+  x1 = slitpfxs[sp[n-1] | 0x20];
+  R1 = x1 & 1;
+  R2 = (x1 >> 1) & 1;
+  if (tks[dn-1] == Tslit) { // merge dup
+    slitx = slitpx;
+    slitpos = slitppos;
+  } else {
+    slitx = slitpos;
+  }
+
+dopfx2
+  x1 = slitpfxs[sp[n-1] | 0x20];
+  R1 = x1 & 1;
+  R2 = (x1 >> 1) & 1;
+  x1 = slitpfxs[sp[n-2] | 0x20];
+  R1 |= x1 & 1;
+  R2 |= (x1 >> 1) & 1;
+  if (tks[dn-1] == Tslit) { // merge dup
+    slitx = slitpx;
+    slitpos = slitppos;
+  } else {
+    slitx = slitpos;
+  }
 
 # ----------------------
 # newline: maintain line table
@@ -369,35 +617,35 @@ root
   hs cmt
 
 # plus min
-  pp pm . 2. sign = 0;
-  mm pm . 2. sign = 1;
+  pm pm . 2. sign = c;
 
 # int literals
 
   # single digit
-  nm. flitfr . N=n;\
-             2. u4v = c - '0'; fdp=0;
+  nm. flitfr . 2`u4v = c - '0'; fdp=0;` .N=n;
 
-  nmee flitxp0 . N=n;\
-             2. u4v = c - '0';
+  nmee flitxp0 . 2`u4v = c - '0';` .N=n;
 
-  0 zilit0 . N=n;\
-             2. u4v = 0;
+  0 zilit0 . 2`u4v = c - '0';` .N=n;
 
-  nm filit . N=n;\
-             2. u4v = c - '0';
+  nm filit . 2`u4v = c - '0';` .N=n;
 
-# identifier - different from slit prefix
-  af id1 3.id .prvc1 = c;\
-              1. N=n;
+# id or kwd
+  a a1
+  i i1
+  o o1
+
+  _ u1
+
+# id / kwd /slit pfx
+  af id1 . .N=n;
 
 # string literal - no prefix
-  qq slit0 . .Q=c;\
-             1.N=n;
+  qq slit0 . 1`N=n;` .Q=c;\
+             2slit0
 
 # float literal
-  .nm flitfr . N=n;\
-               2. u4v=0; fdp=0;
+  .nm flitfr . 2`u4v=0; fdp=0;` .N=n;
 
 # brackets
   { . co dobo
@@ -409,7 +657,8 @@ root
   ( . ro dobo
   ) . rc dorc
 
-  := . qas
+  =  . das 2.atrs[dn] = c;
+  := . das 2.atrs[dn] = c;
 
 # punctuators
   : . colon
@@ -418,19 +667,11 @@ root
   , . comma
 #  . . dot
 
-# operators
-#  ** . exp
-#  *= . mulas
-  op .   . 2. atrs[dn] = c;
-  * . ast 2. atrs[dn] = Lomul;
-  / oper . 2. atrs[dn] = Lodiv;
-  < oper . 2. atrs[dn] = Lolt;
-  > oper . 2. atrs[dn] = Logt;
-  ! .    . 2. atrs[dn] = c;
+# operators @ % & ^ | * ~
+  o1 op11 . 2. atrs[dn] = c; Q=c;
 
-# pm= . aas.
-
-  = . das
+# < > !
+  o2 op21 . 2. atrs[dn] = c; Q=c;
 
 # escaped newline
   \`nl . . donl
@@ -438,15 +679,24 @@ root
   EOF EOF
 
 # ---------------------
-# 2-3 char operators
+# operators / augassign
 # ---------------------
-oper
-  < root . 2. atrs[dn] = Loshl;
-  > root . 2. atrs[dn] = Loshr;
-  & root . 2. atrs[dn] = Loand;
-  | root . 2. atrs[dn] = Loor;
+op11
+  Q op12 . 2. atrs[dn] |= Lxop2;
+  = root aas
+  ot -root op
 
-#  = root aas
+op12
+  = root aas
+  ot -root op
+
+op21
+  = root op 2. atrs[dn] |= Lxoe;
+  Q op22 .  2. atrs[dn] |= Lxop2;
+  ot -root op
+
+op22
+  = root aas
   ot -root op
 
 # ---------------------
@@ -468,49 +718,106 @@ sol
   ot
 
 # ---------------------
+# and as in is if or
+# ---------------------
+a1
+  nd root op 2. atrs[dn] = '&' | 0x80;
+  s  root as
+  an id2 . .N=n-1;
+  ot -root 2.id `prvc1 = 'a'; prvc2 = c;` id2
+
+i1
+  f root if
+  s root is
+  n root in
+  an id2 . .N=n-1;
+  ot -root 2.id `prvc1 = 'i'; prvc2 = c;` id2
+
+o1
+  r root op 2. atrs[dn] = '|' | 0x80;
+  an id2 . .N=n-1;
+  ot -root 2.id `prvc1 = 'i'; prvc2 = c;` id2
+
+u1
+  _ dun0 . .N=n;
+  an id2
+  ot -root id 2.atrs[dn] = La_id_;
+
+dun0
+  an dun1
+  ot -root 2.id `prvc1 = prvc2 = '_';` id2
+
+dun1
+  an dun2
+  ot -root 2.id 1`id1cnt++;` 2`atrs[dn] = id1getadd(sp[N]) | La_id1 | La_idprv;`
+
+dun2
+  an dun
+  ot -root  2.id id2prv
+
+dun
+  an
+  ot -root 2.id dunder
+
+# ---------------------
 # identifier or keyword. lookup in action
 # ---------------------
 id1
-  an id2 . .prvc2 = c;
-  ot -root 2.id id1
+  an id2s
+  qq slit0 . 1`N=n;` `Q=c;` 2dopfx1
+  ot -root 2.id 1`id1cnt++;` 2`atrs[dn] = id1getadd(sp[N]) | La_id1 | La_idprv;`
+
+id2s
+  an id
+  qq slit0 . 1`N=n;` `Q=c;` 2dopfx2
+  ot -root . `prvc1 = sp[N]; prvc2 = c;` id2
 
 id2
-  an id . 2.idxpos = idnampos + 3;\
-          2.idnampool[idnampos] = prvc1; idnampool[idnampos+1] = prvc2; idnampool[idnampos+2] = c;
-  ot -root . id2
+  an id
+  ot -root . `prvc1 = sp[N]; prvc2 = c;` id2
 
 id
-  an . . 2.idnampool[idxpos++] = c;
+  an
 #  nl root . donl\
 #            id
   ot -root . id
 
 # --------------
-# sign
+# sign or operator. Process here for nlits
 # --------------
 pm
-  +
-  - . . 2. sign ^= 1;
+  pm . . 2. sign ^= 1; ## -- -> +  +- -> -
   0 zilit0 . N=n;\
              2. u4v = 0;
   nm -root
-  ot -root pm 2. atrs[dn] = sign;
+  = root aas  2. atrs[dn] = sign ? '-' : '+';
+  ot -root op 2. atrs[dn] = sign ? '-' : '+';
+
+# ---------------------
+# float literal tramp
+# ---------------------
+flit
+  ot -root 2.nlit flit
+
+# ---------------------
+# int   literal tramp
+# ---------------------
+ilit
+  ot -root 2.nlit ilit
 
 # ---------------------
 # prefixed integer literal
 # ---------------------
 .zilit0
   bb ilitb
-  oo ilito
+  oO ilito
   xx ilitx
   _
   0
   nm filit . 2. u4v = c - '0'; ## decimal with leading zero
   . flitfr . 2. fdp=0; ## 0.
-  j root 2.nlit 2. litfpi = 1;\
-               flit
-  ot -root 2.nlit 2. atrs[dn] = 0;\
-                  1. ilit1cnt++;
+  j flit   . 2. litfpi = 1;
+  ot -root 2.nlit 2`atrs[dn] = 0;` 1. ilit1cnt++;
 
 # ---------------------
 # float or int literal
@@ -520,9 +827,8 @@ pm
   _
   . flitfr . 2. fdp=0;
   ee flitxp0 .   2. fxs = 0; fxp = 0;
-  j root 2.nlit 2. litfpi = 1;\
-               flit
-  ot -root 2.nlit ilit
+  j flit . 2. litfpi = 1;
+  ot -ilit
 
 # ---------------------
 # float literal fraction
@@ -530,10 +836,9 @@ pm
 .flitfr
   nm . . doflitfr
   _
-  ee flitxp0 .   2. fxs = 0; fxp = 0;
-  j root 2.nlit 2. litfpi = 1;\
-               flit
-  ot -root 2.nlit flit
+  ee flitxp0 . 2. fxs = 0; fxp = 0;
+  j  flit    . 2. litfpi = 1;
+  ot -flit
 
 # ---------------------
 # float literal exp
@@ -542,18 +847,13 @@ pm
   nm flitxp . 2. if (litbin && fxp < E16max) fxp = fxp * 10 + c - '0'; else litbin = 0;
   pm flitxp . 2. fxs = (c == '-');
   _
-  j root 2.nlit 2. litfpi = 1;\
-               flit
-
-#  ot -root 2.nlit flit
+  j  flit    . 2. litfpi = 1;
 
 .flitxp
   nm . . 2. if (litbin && fxp < E16max) fxp = fxp * 10 + c - '0'; else litbin = 0;
   _
-  j root 2.nlit 2. litfpi = 1;\
-               flit
-
-  ot -root 2.nlit flit
+  j  flit  . 2. litfpi = 1;
+  ot -flit
 
 # ---------------------
 # int literal binary
@@ -562,7 +862,7 @@ pm
   0 . . 2. if (litbin && u4v < B32max) u4v <<= 1; else litbin = 0;
   1 . . 2. if (litbin && u4v < B32max) u4v = u4v << 1 | 1; else litbin = 0;
   _
-  ot -root 2.nlit ilit
+  ot -ilit
 
 # ---------------------
 # int literal octal
@@ -572,7 +872,7 @@ pm
   9 Err
   nm . . 2. if (litbin && u4v < D32max) u4v = u4v << 3 | (c - '0'); else litbin = 0;
   _
-  ot -root 2.nlit ilit
+  ot -ilit
 
 # ---------------------
 # int literal hex
@@ -581,34 +881,38 @@ pm
   nm . . 2. if (litbin && u4v < X32max) u4v = u4v << 4 | (c - '0'); else litbin = 0;
   hx . . 2. if (litbin && u4v < X32max) u4v = u4v << 4 | ( (c | 0x20) + 10 - 'a'); else litbin = 0;
   _
-  ot -root 2.nlit ilit
+  ot -ilit
 
-# todo merge adjacent strings
 # ---------------------
 # string literal start
 # ---------------------
 slit0
-  QQ . . 2.slitx=slitpos;\
-           R0=1; # start of long slit
-
-  R00Q root 2.slit 1.slit0cnt++; # empty short slit ''
-
-1 \ . . donl
-`A2  \ . . 2doesc
-`a2  \ . . donl
+  QQ slit . .R0=1; # start of long slit
+  Q root 2.slit 1`slit0cnt++;` 2.atrs[dn] = 0; # empty short slit ''
+  \ -slit
 1 nl Err-str-nl
-  ot slit . doslit0
+  ot slit . 2.slitpool[slitx++] = c;
 
 # ---------------------
 # string literal
 # ---------------------
 slit string literal
-  R00Q   root 2.slit slit # end of short slit
-  R01QQQ root 2.slit slit # end of long slit
-
-1 \ . . donl
+  Q slitq
+1 \nl . . donl
+1 \Q
 `A2  \ . . 2doesc
-`a2  \ . . donl
+`a2  \nl . . donl
 1 nl Err-str-nl
   EOF Err
-  ot . . 2doslit
+  ot . . 2.slitpool[slitx++] = c;
+
+# possible end of slit
+slitq
+  R01QQ slit9 # end of long slit
+  R01   slit  . 2. slitpool[slitx++] = Q; slitpool[slitx++] = c; # less than 3q in long slit
+  ot   -slit9 # end of short slit
+
+# end of slit
+slit9
+1 ot -root .    slit1
+2 ot -root slit slit2

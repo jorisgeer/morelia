@@ -34,7 +34,7 @@ enum Astyp { Aid,Avar,Ailit,Ailitn,Aflit,Aslit,Ailits,Ailitns,Atru,Afal,Akwd,
   Arexp,Aprmlst,Astmtlst,Acount };
 
 enum Packed8 Uop { Onot,Oneg,Oumin,Oupls,Oucnt };
-enum Packed8 Bop { Orelor,Oreland,One,Oeq,Oshl,Oshr,Oxor,Oor,Oand,Oadd,Osub,Omul,Odiv,Omod,Olt,Ogt,Ole,Oge,Obcnt };
+enum Packed8 Bop { Onil,Orelor,Oreland,One,Oeq,Oshl,Oshr,Oxor,Oor,Oand,Oadd,Osub,Omul,Odiv,ODiv,Omod,Omxm,Oexp,Olt,Ogt,Ole,Oge,Obcnt };
 
 #define Aval Aslit
 #define Aleaf Akwd
@@ -42,10 +42,5 @@ enum Packed8 Bop { Orelor,Oreland,One,Oeq,Oshl,Oshr,Oxor,Oor,Oand,Oadd,Osub,Omul
 
 #define Atybit 26
 #define Atymsk 0x3ffffff
-
-#define Aopbit 21
-#define Aopmsk 0x1f
-
-#define Acntlim (1U << Aopbit)
 
 extern cchar *atynam(enum Astyp t);

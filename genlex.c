@@ -55,11 +55,23 @@ tok   . suffix for hr
 
 */
 
+#define Lang_dun
+
 static const bool disabled[128] = {
 #ifdef Lang_stresc
-  ['a'] = 1
+  ['a'] = 1,
 #else
-  ['A'] = 1
+  ['A'] = 1,
+#endif
+#ifdef Lang_blt
+  ['b'] = 1,
+#else
+  ['B'] = 1,
+#endif
+#ifdef Lang_dun
+  ['d'] = 1
+#else
+  ['D'] = 1
 #endif
 };
 
@@ -88,7 +100,7 @@ static ub4 msgfile = Shsrc_genlex;
  #pragma clang diagnostic ignored "-Wswitch-enum"
 #endif
 
-static ub2 msgopts = Msg_shcoord | Msg_fno | Msg_lno | Msg_col;
+static ub2 msgopts = Msg_shcoord | Msg_fno | Msg_lno | Msg_col | Msg_Lvl;
 
 static const char packed8[] = "Packed8 ";
 
@@ -107,6 +119,7 @@ static bool nodiff;
 static bool omitcode=0,omittrans=1,omittoken=0;
 static bool addtrace=0;
 static bool printstates = 0;
+static char ena_lno = 0;
 
 struct globs globs;
 
@@ -159,6 +172,7 @@ static ub2 actlns[Nact];
 static ub1 actvals[Nact * Actlen];
 static ub2 actvlens[Nact];
 static ub2 actrefs[Nact];
+static ub1 actcnts[Nact];
 static ub2 act_init = Nact;
 
 #define Nset1 64
@@ -302,6 +316,12 @@ static ub1 addtok(ub2 ln,cchar *name,ub1 len,ub1 grp)
 
 static ub1 addact(ub2 ln,cchar *nam,ub1 len)
 {
+  ub1 act;
+
+  for (act = 0; act < nact; act++) {
+    if (len == actnlens[act] && memeq(acts[act],nam,len)) serror(ln|Lno,"action %.*s previously defined at ln %u",len,nam,actlns[act]);
+  }
+
   if (nact+1 >= Nact) serror(ln|Lno,"exceeding %u actions",nact);
   acts[nact] = nam;
   actnlens[nact] = len;
@@ -323,12 +343,17 @@ static ub1 getact(ub2 ln,cchar *nam,ub2 len)
 
 static void addactval(ub2 ln,ub2 act,const ub1 *src,ub2 len)
 {
-  ub2 actlen = actvlens[act];
-  ub1 *dst = actvals + act * Actlen + actlen;
+  ub2 actlen;
+  ub1 *dst;
   ub2 n=len;
 
+  if (act >= nact) serror(ln|Lno,"invalid act %u/%u for '%.*s",act,nact,min(len,16),src);
   if (len == 0) serror(0,"nil len for action %u",act);
+
+  actlen = actvlens[act];
   if (actlen + len + 4 >= Actlen) serror(ln|Lno,"act %.*s exceeds %u code len",actnlens[act],acts[act],Actlen);
+
+  dst = actvals + act * Actlen + actlen;
 
   while (--n && src[n] == ' ') ;
   if (n == 0 && src[0] == ' ') serror(ln|Lno,"act %u empty line",act);
@@ -398,6 +423,21 @@ static ub2 addset(ub2 ln,bool mul,const ub1 *nam,ub2 nlen,const ub1 *val,ub2 vle
   setnlens[nset] = 3;
   memcpy(setnams + nset * Snam,"_ot",3);
 
+  if (mul) {
+    if (nsetm + 1 >= Nset2) serror(lnx,"exceeding %u multisets at %.*s",Nset2,nlen,nam);
+    mbit = 1U << nsetm;
+    setbits[s] = mbit;
+    nsetm++;
+    svrb(lnx,"add set %u/%u +%.*s",s,nsetm,nlen,nam);
+  } else {
+    if (nsets + 1 >= Nset1) serror(lnx,"exceeding %u single sets at %.*s",Nset1,nlen,nam);
+    sbit = nsets;
+    nsets++;
+    setmaps[sbit] = s;
+    setbits[s] = sbit;
+    svrb(lnx,"add set %u/%u  %.*s",s,nsets,nlen,nam);
+  }
+
   if (vlen == 2) { // special case for aA
     c = val[0]; c2 = val[1];
     if ( (c == (c2 | 0x20)) || (c2 == (c | 0x20)) ) {
@@ -405,19 +445,6 @@ static ub2 addset(ub2 ln,bool mul,const ub1 *nam,ub2 nlen,const ub1 *val,ub2 vle
       setcase[s] = 1;
       return s;
     }
-  }
-
-  if (mul) {
-    if (nsetm + 1 >= Nset2) serror(lnx,"exceeding %u multisets at %.*s",Nset2,nlen,nam);
-    mbit = 1U << nsetm;
-    setbits[s] = mbit;
-    nsetm++;
-  } else {
-    if (nsets + 1 >= Nset1) serror(lnx,"exceeding %u single sets at %.*s",Nset1,nlen,nam);
-    sbit = nsets;
-    nsets++;
-    setmaps[sbit] = s;
-    setbits[s] = sbit;
   }
 
   i = 0;
@@ -538,10 +565,10 @@ static ub1 getkwd(cchar *name,ub1 len)
 
 static ub4 hashstr(cchar *p,ub2 len,ub4 hc)
 {
-  char buf[1024];
-  ub2 i=0;
+  char buf[256];
 
-  do { buf[i] = p[i] - '\0'; } while (++i < len);
+  memcpy(buf,p,len);
+  buf[len] = 0;
 
   return hashalstr(buf,len,hc);
 }
@@ -1095,15 +1122,16 @@ static ub1 gettoken(ub2 ln,cchar *buf,ub4 pos,ub2 len)
   serror(ln|Lno,"unknown token '%.*s'",len,buf+pos);
 }
 
-#define Hshlen 0x8000
+#define Hshlen 0x1000
 static ub1 kwhsh[Hshlen];
 static ub1 blthsh[Hshlen];
-static ub1 dunhsh[Hshlen];
-static ub2 kwhshlen,blthshlen,dunhshlen;
+static ub1 dun0hsh[Hshlen];
+static ub1 dun1hsh[Hshlen];
+static ub2 kwhshlen,blthshlen,dun0hshlen,dun1hshlen;
 static ub1 kwhshlut[256];
 static ub1 blthshlut[256];
-static ub4 hshseed,dhshseed;
-static ub2 dunhshshift;
+static ub4 hshseed,d0hshseed,d1hshseed;
+static ub2 dun0hshshift,dun1hshshift;
 
 static void setlut(ub1 *lut,ub4 hc,ub1 bit)
 {
@@ -1130,7 +1158,7 @@ static bool mkkwhsh2(ub1 *hsh,cchar *strs[],ub1 *slens,ub2 cnt,ub2 len,ub1 pwr2,
     if (slen < 3) { sno++; continue; }
     p = strs[sno];
     hc = hashstr(p,slen,seed);
-
+    // info("len %-4u h %x %.*s",len,hc,slen,p);
     bit = (slen >= mikwlen) ? 4 : 0;
     setlut(kwhshlut,hc,bit);
 
@@ -1172,12 +1200,12 @@ static bool mkblthsh2(ub1 *hsh,cchar *strs[],ub1 *slens,ub2 cnt,ub2 len,ub1 pwr2
   return 0;
 }
 
-static ub2 mkdunhsh2(ub1 *hsh,cchar *strs[],ub1 *slens,ub2 cnt,ub2 len,ub1 pwr2,ub4 seed)
+static ub2 mkdunhsh2(ub1 *hsh,cchar *strs[],ub1 *slens,ub2 cnt,ub2 len,ub1 pwr2,ub4 seed,ub1 part)
 {
   const char *p;
   ub4 hc,len1 = len-1;
   ub2 h,slen,sno;
-  ub2 hibit=32,bit;
+  ub2 bit;
 
  for (bit = 0; bit < 32 - pwr2; bit++) {
 
@@ -1187,6 +1215,7 @@ static ub2 mkdunhsh2(ub1 *hsh,cchar *strs[],ub1 *slens,ub2 cnt,ub2 len,ub1 pwr2,
     slen = slens[sno];
     if (slen < 3) continue;
     p = strs[sno];
+    if ((*p & 1) == part) continue;
     hc = hashstr(p,slen,seed);
     hc = (hc >> pwr2) ^ hc;
     h = (hc >> bit) & len1;
@@ -1194,9 +1223,9 @@ static ub2 mkdunhsh2(ub1 *hsh,cchar *strs[],ub1 *slens,ub2 cnt,ub2 len,ub1 pwr2,
     if (hsh[h] < cnt) break;
     hsh[h] = sno;
   }
-  if (sno == cnt) hibit = bit;
+  if (sno == cnt) return bit;
  }
- return hibit;
+ return 32;
 }
 
 static ub2 mkkwhsh(ub2 len,ub4 seed)
@@ -1226,15 +1255,20 @@ static ub2 mkbltsh(ub2 len,ub4 seed)
   return Hshlen;
 }
 
-static ub2 mkdunhsh(ub2 len,ub4 seed)
+static ub2 mkdunhsh(ub2 len,ub4 seed,ub1 part)
 {
   ub2 bit = 0,len2 = 1,sbit;
+  ub1 *hsh = part ? dun1hsh : dun0hsh;
 
   while (len2 < len) { len2 <<= 1; bit++; }
 
   while (len2 < Hshlen) {
-    sbit = mkdunhsh2(dunhsh,duns,dunlens,ndun,len2,bit,seed);
-    if (sbit < 32) { dunhshshift = sbit; return len2; }
+    sbit = mkdunhsh2(hsh,duns,dunlens,ndun,len2,bit,seed,part);
+    if (sbit < 32) {
+      if (part) dun1hshshift = sbit;
+      else dun0hshshift = sbit;
+      return len2;
+    }
     len2 <<= 1; bit++;
   }
   return Hshlen;
@@ -1272,28 +1306,44 @@ static int mkhshes(void)
     if (loklen >= Hshlen) serror(Lno,"no hash len under %u found for kwd",Hshlen);
     klen = mkkwhsh(loklen,loseed);
     kwhshlen = klen;
-    info("kwd    hash size %4u seed %x at iter %u",klen,seed,loit);
+    info("kwd    hash size %4u for %2u seed %x at iter %u",klen,ntkwd,loseed,loit);
   }
   if (nblt) {
     if (loblen >= Hshlen) serror(Lno,"no hash len under %u found for bltin",Hshlen);
     blen = mkbltsh(loblen,loseed);
     blthshlen = blen;
-    info("blt    hash size %4u",blen);
+    info("blt    hash size %4u for %2u",blen,nblt - havebltlens[2]);
   }
   hshseed = loseed;
 
-  if (ndun) {
-    for (it = 0; it < Dndhshiter; it++) {
-      dlen = mkdunhsh(ndun,seed);
-      if (dlen < lodlen) { lodlen = dlen; loseed = seed; loit=it; }
-      seed = rnd(hi32);
-    }
-    if (lodlen >= Hshlen) serror(Lno,"no hash len under %u found for dunder",Hshlen);
-    dlen = mkdunhsh(lodlen,loseed);
-    dunhshlen = dlen;
-    info("dunder hash size %4u seed %x at iter %u shift %u",dlen,seed,loit,dunhshshift);
-    dhshseed = loseed;
+  if (ndun == 0) return 0;
+
+  seed = 0;
+  for (it = 0; it < Dndhshiter; it++) {
+    dlen = mkdunhsh(ndun,seed,0);
+    if (dlen < lodlen) { lodlen = dlen; loseed = seed; loit=it; }
+    seed = rnd(hi32);
   }
+  if (lodlen >= Hshlen) serror(Lno,"no hash len under %u found for dunder",Hshlen);
+  dlen = mkdunhsh(lodlen,loseed,0);
+  if (dlen != lodlen) ice(0,0,"dunder hash %u vs %u",dlen,lodlen);
+  dun0hshlen = dlen;
+  info("dunder hash 0 size %4u for %2u seed %x at iter %u shift %u",dlen,ndun - havedunlens[2],loseed,loit,dun0hshshift);
+  d0hshseed = loseed;
+
+  seed = 0; lodlen = Hshlen;
+  for (it = 0; it < Dndhshiter; it++) {
+    dlen = mkdunhsh(ndun,seed,1);
+    if (dlen < lodlen) { lodlen = dlen; loseed = seed; loit=it; }
+    seed = rnd(hi32);
+  }
+  if (lodlen >= Hshlen) serror(Lno,"no hash len under %u found for dunder",Hshlen);
+  dlen = mkdunhsh(lodlen,loseed,1);
+  if (dlen != lodlen) ice(0,0,"dunder hash %u vs %u",dlen,lodlen);
+  dun1hshlen = dlen;
+  info("dunder hash 1 size %4u for %2u seed %x at iter %u shift %u",dlen,ndun - havedunlens[2],loseed,loit,dun1hshshift);
+  d1hshseed = loseed;
+
 
   return 0;
 }
@@ -1407,7 +1457,7 @@ static int rdspec(cchar *fname)
 
   enum Specvar sv = Sv_count;
   ub2 c,c2;
-  bool actena = 1;
+  bool actena = 1,actself = 0;
 
   if (readfile_pad(&specfile,fname,1,hi24,4,0)) return 1;
 
@@ -1427,6 +1477,7 @@ static int rdspec(cchar *fname)
 
   ub2 set;
   ub2 n = 0;
+  ub2 cnt;
   ub2 varnam0=0,varnam1=0,varval0=0,varval1=0;
   ub2 kwdnam0=0;
   ub2 slen=0,i;
@@ -1438,6 +1489,7 @@ static int rdspec(cchar *fname)
   bool multiset=0;
   bool tokeep=0;
   bool skipact=0;
+  bool enable=1;
 
   tp = transtab;
 
@@ -1467,6 +1519,7 @@ static int rdspec(cchar *fname)
     case Cnl:  break;
     case Chsh: if (c2 == '#') { sinfofln(FLN,n,"eof at blockcomment"); goto eof; }
                else { xst = Scmt; xst2 = Sout; break; }
+    case Cbtk: enable = !disabled[c2]; n++; break;
     case Cpls:
     case Cmin:
     case Calpha: varnam0 = n; varnam1=0; xst = Svarnam; break;
@@ -1486,7 +1539,7 @@ static int rdspec(cchar *fname)
     if (varnam1 == 0) break;
     // info("'%.*s'",varnam1-varnam0,buf+varnam0);
     sv = getvar(buf,varnam0,varnam1);
-
+    actena = 1;
     switch (sv) {
     case Sv_count:  xst = Scmt;     break; // unknown
     case Sv_kwd:
@@ -1525,7 +1578,10 @@ static int rdspec(cchar *fname)
   case Skwd0:
     switch (t) {
     case Cnl:    break;
-    case Calpha: varnam0 = n; varnam1=0; xst = Svarnam; break;
+    case Cbtk:   enable = !disabled[c2]; n++; break;
+    case Calpha: if (buf[n-1] == '\n') enable = 1;
+                 varnam0 = n; varnam1=0; xst = Svarnam;
+                 break;
     case Cws:    xst = Skwd1; break;
     case Cdot:
     case Chsh:   xst = Scmt; xst2 = Skwd0; break;
@@ -1557,8 +1613,7 @@ static int rdspec(cchar *fname)
       if (sv == Sv_dunder) {
         dun = getdun(buf+kwdnam0,slen);
         if (dun < ndun) serror(kwdnam0,"%.*s already defined as dunder at line %u",slen,buf+kwdnam0,dunlnos[dun]);
-        adddun(lno,buf+kwdnam0,slen);
-
+        if (enable) adddun(lno,buf+kwdnam0,slen);
       } else {
         kw = getkwd(buf+kwdnam0,slen);
         if (kw < nkwd) serror(kwdnam0,"%.*s already defined as kwd at line %u",slen,buf+kwdnam0,kwlnos[kw]);
@@ -1566,7 +1621,7 @@ static int rdspec(cchar *fname)
         if (blt < nblt) serror(kwdnam0,"%.*s already defined as bltin at line %u",slen,buf+kwdnam0,bltlnos[blt]);
 
         if (sv == Sv_kwd && t != Cws) addkwd(lno,buf+kwdnam0,slen,0);
-        else if (sv == Sv_bltin) addblt(lno,buf+kwdnam0,slen);
+        else if (enable && sv == Sv_bltin) addblt(lno,buf+kwdnam0,slen);
       }
 
       if (t == Cnl) xst = Skwd0;
@@ -1693,8 +1748,9 @@ static int rdspec(cchar *fname)
     switch (t) {
     case Cnl: break;
 //    case Cws: break;
-    case Cbtk:   if (disabled[c2]) actena = 0; else n += 2; break;
-    case Chsh:   xst = Scmt; xst2 = Sact0; actena = 1; break;
+    case Cbtk:   actena = !disabled[c2]; n += 2; break;
+    case Chsh:   xst = Scmt; xst2 = Sact0; break;
+    case Cdot:   actself = 1; break;
     case Calpha: actnam0 = n; actnam1=0; xst = Sact1; break;
     default:     serror(n,"expected actnam, found '%s'",chprint(c));
     }
@@ -1712,8 +1768,10 @@ static int rdspec(cchar *fname)
         xst = Sstate0;
       } else {
         vrb("new act %.*s",slen,buf+actnam0);
-        act = addact(lno,buf+actnam0,slen);
-        if (actena == 0) actrefs[act] = lno;
+        if (actena) act = addact(lno,buf+actnam0,slen);
+        else act = hi16;
+        if (actself) actrefs[act] = lno;
+        actself = 0;
       }
       break;
     default: serror(n,"expected actnam, found %c",c);
@@ -1762,7 +1820,7 @@ static int rdspec(cchar *fname)
   case Sact3:
     switch (c) {
     case '\n': slen = n - actval0;
-               addactval(lno,act,buf+actval0,slen);
+               if (actena) addactval(lno,act,buf+actval0,slen);
                actval0 = actval1 = 0;
                xst = Sact20;
                break;
@@ -1954,8 +2012,8 @@ static int rdspec(cchar *fname)
     case Cmin:   idnam0 = n+1; idnam1 = 0; tp->dobt = 1;  xst = Snxstate1; break;
     case Calpha: idnam0 = n;   idnam1 = 0; xst = Snxstate1; break;
 
-    case Cnl:    serror(n,"incomplete pattern for %.*s",stlens[st0],states[st0]);
-    default:     serror(n,"unexpected char '%s' for next state",chprint(c));
+    case Cnl:    serror(n,"incomplete pattern for %s",stnam);
+    default:     serror(n,"state %s unexpected char '%s' for next state",stnam,chprint(c));
   }
   break;
 
@@ -2041,9 +2099,8 @@ static int rdspec(cchar *fname)
     if (slen == 0 || (slen == 1 && buf[idnam0] == '.') ) serror(idnam0,"pat %s empty token name",tp->pat);
 
     kw = getkwd(buf+idnam0,slen);
-    if (kw < nkwd) serror(idnam0,"st %s pat %s ln %u token %.*s already defined as kwd at line %u",
-      stnam,tp->pat,lno,slen,buf+idnam0,kwlnos[kw]);
-    tk = gettoken(lno,buf,idnam0,slen);
+    if (kw < nkwd) tk = kw;
+    else tk = gettoken(lno,buf,idnam0,slen);
     tkrefs[tk] = tp->ln;
     idnam0 = idnam1 = 0;
     if (tokeep) tp->tk = tk;
@@ -2070,7 +2127,8 @@ static int rdspec(cchar *fname)
     case Cbs:    if (c2 == '\n') { n++; } break;
     case Chsh:   xst = Spcmt; tp++; break;
     case Cnl:    xst = Spat0; tp++; break;
-    case Cdot:   actval0 = n+1; actval1=0; xst = Scode; break;
+    case Cdot:
+    case Cbtk:   actval0 = n+1; actval1=0; xst = Scode; break;
     default:     serror(n,"expected action, found %c",c);
     }
   break;
@@ -2092,12 +2150,15 @@ static int rdspec(cchar *fname)
       codlen = tp->codlen;
       if (codlen + slen + 32 >= Codlen) serror(n,"pat '%s' act %.*s code len %u+%u exceeds %u",tp->pat,actnlens[act],acts[act],codlen,slen + 32,Codlen);
       code = actvals + act * Actlen;
-      codlen += mysnprintf(tp->code,codlen,Codlen,"%.*s// ln %u %.*s\n",codlen,"\n",actlns[act],actnlens[act],acts[act]);
+      codlen += mysnprintf(tp->code,codlen,Codlen,"%.*s// %.*s",codlen,"\n",actnlens[act],acts[act]);
+      if (ena_lno) codlen += mysnprintf(tp->code,codlen,Codlen," ln %u",actlns[act]);
+      tp->code[codlen++] = '\n';
       memcpy(tp->code + codlen,code,slen);
       tp->codlen = codlen + slen;
     }
     else skipact = 0;
     actrefs[act] = lno;
+    actcnts[act]++;
     idnam0 = idnam1 = 0;
     if (t == Cnl) { tp++; xst = Spat0; }
     else if (t == Cbs && c2 == '\n') {
@@ -2107,7 +2168,7 @@ static int rdspec(cchar *fname)
   break;
 
   case Scode:
-    if (t == Cnl || (t == Chsh && c2 == '#')) actval1 = n;
+    if (t == Cnl || t == Cbtk || (t == Chsh && c2 == '#')) actval1 = n;
     else if (c == '\\' && c2 == '\n') actval1 = n;
     else if (c == 0) serror(n,"unexpected eof in state %s",stnam);
     else if (c == '\r' || Ctab[c] == 0) serror(n,"state %s nonprintable char '%s' in code",stnam,chprint(c));
@@ -2136,6 +2197,7 @@ static int rdspec(cchar *fname)
     actval0=actval1=0;
     if (t == Cnl) { xst = Spat0; tp++; }
     else if (t == Chsh) { xst = Sccmt; }
+    else if (t == Cbtk) { actval0 = n + 1; xst = Spatact0; }
     else { xst = Spatact0; n++; }
   break;
 
@@ -2208,7 +2270,7 @@ static int rdspec(cchar *fname)
   if (msgerrcnt()) return 1;
 
   for (act = 0; act < nact; act++) {
-    if (actrefs[act] == 0) serror(Lno,"action %.*s unreferenced",actnlens[act],acts[act]);
+    if (actrefs[act] == 0) serror(actlns[act]|Lno,"action %.*s unreferenced",actnlens[act],acts[act]);
   }
   if (msgerrcnt()) return 1;
 
@@ -2247,6 +2309,11 @@ static int rdspec(cchar *fname)
   }
   if (msgerrcnt()) return 1;
 
+  for (act = 0; act < nact; act++) {
+    cnt = actcnts[act];
+    if (cnt > 1) info("%u %.*s",cnt,actnlens[act],acts[act]);
+  }
+
   return 0;
 }
 
@@ -2270,19 +2337,21 @@ static void wrfhdr(struct bufile *fp,ub1 addinfo)
   }
 }
 
-static ub4 wrhsh(struct bufile *lfp,struct bufile *sfp,cchar *pfx,cchar *names[],ub1 *lens,ub1 *map,ub2 cnt,ub1 *hsh,ub2 hshlen)
+static ub4 wrhsh(struct bufile *lfp,struct bufile *sfp,cchar *pfx,cchar *names[],ub1 *lens,ub1 *map,ub2 cnt,ub1 *hsh,ub2 hshlen,bool dopool)
 {
   #define Spool (Nkwd * 8)
   ub2 i,len,x;
   ub4 hc=0;
   ub2 spos=0;
   char spool[Spool];
+  char buf[512];
+  ub2 blen = 512,bpos=0;
   ub2 sposs[Nkwd];
   char pfx0 = *pfx++;
   char pfx1 = upcase(*pfx);
   cchar *mpfx = map ? "t" : "";
 
- if (sfp->top) {
+ if (dopool && sfp->top) {
 
   memset(spool,' ',Spool);
   for (i = 0; i < cnt; i++) {
@@ -2294,16 +2363,16 @@ static ub4 wrhsh(struct bufile *lfp,struct bufile *sfp,cchar *pfx,cchar *names[]
     spos += len;
   }
 
-  myfprintf(sfp,"static const char %s%snampool[%3u] = \"%.*s\";\n",mpfx,pfx,spos,spos,spool);
+  myfprintf(sfp,"static const char %s%snampool[%3u] = \"%.*s\";\n\n",mpfx,pfx,spos,spos,spool);
 
   hc = hashalstr(spool,spos,hshseed);
-  info("hsh len %u %x seed %x '%.*s'",spos-1,hc,hshseed,spos,spool);
+  info("hsh %s pool len %u %x seed %x '%.*s'",pfx,spos-1,hc,hshseed,min(spos,32),spool);
 
   myfprintf(sfp,"static const ub2  %s%snamposs[%3u] = { ",mpfx,pfx,cnt);
   for (i = 0; i < cnt; i++) {
     myfprintf(sfp,"%s%u",i ? "," : "",sposs[i]);
   }
-  myfprintf(sfp," };\n");
+  myfprintf(sfp," };\n\n");
 
   myfprintf(sfp,"static const ub1  %s%snamlens[%3u] = { ",mpfx,pfx,cnt);
   for (i = 0; i < cnt; i++) {
@@ -2318,14 +2387,24 @@ static ub4 wrhsh(struct bufile *lfp,struct bufile *sfp,cchar *pfx,cchar *names[]
   myfprintf(lfp,"#define x %c99_count\n\n",pfx0);
 
   myfprintf(lfp,"static const ub1 %shsh[%u] = {\n  ",pfx,hshlen);
+  bpos = 0;
   for (i = 0; i < hshlen; i++) {
     x = hsh[i];
-    if (x < cnt) myfprintf(lfp,"%-3u",x);
-    else myfputs(lfp,"x  ",3);
+    if (x < cnt) {
+      myfprintf(lfp,"%-3u",x);
+      bpos += mysnprintf(buf,bpos,blen," %.*s",lens[x],names[x]);
+    } else {
+      myfputs(lfp,"x  ",3);
+      buf[bpos++] = '.';
+    }
     if (i < hshlen-1) myfputc(lfp,',');
-    if (( i & 15) == 15) myfputs(lfp,"\n  ",3);
+    if (( i & 15) == 15) {
+      myfprintf(lfp," // %.*s\n  ",bpos,buf);
+      bpos = 0;
+    }
   }
-  myfprintf(lfp,"};\n");
+  if (bpos) myfprintf(lfp," // %.*s\n",bpos,buf);
+  myfputs(lfp,"};\n",3);
 
   myfprintf(lfp,"#undef x\n\n");
   return hc;
@@ -2522,7 +2601,9 @@ static void wrenum(struct bufile *fp,ub1 *lens,cchar **nams,char *name,ub2 cnt,u
 {
   ub2 n;
   sb4 pad = -upad-1;
-  cchar *nam;
+  cchar *nam,*pfx="";
+
+  if (*name > 'Z') pfx = "_";
 
   pad = min(pad,-8);
   if (cnt == 0) {
@@ -2534,7 +2615,7 @@ static void wrenum(struct bufile *fp,ub1 *lens,cchar **nams,char *name,ub2 cnt,u
   for (n = 0; n < cnt; n++) {
     nam = nams[n];
     if (strcmp(nam,"false") == 0) nam = "fals";
-    myfprintf(fp," %c%*.*s = %2u,",*name,pad,lens[n],nam,n);
+    myfprintf(fp," %s%c%*.*s = %3u,",pfx,*name,pad,lens[n],nam,n);
     if ( (n & 7) == 7) myfputs(fp,"\n ",2);
   }
   if (n & 7) myfputs(fp,"\n ",2);
@@ -2572,7 +2653,7 @@ static int wrfile(void)
   ub1 grp,logrp=0xff;
   ub2 len,inclen,minlen,nlen;
   ub2 c;
-  ub2 ccnt,tcnt,ucnt,ocnt,loopc1;
+  ub2 ccnt,tcnt,ucnt,ocnt,totcnt,loopc1;
 
   cchar *nam;
 
@@ -2593,6 +2674,7 @@ static int wrfile(void)
   cchar *snam;
   ub1 ctbl[256];
   ub1 ttbl[256];
+  ub2 ctltab[256];
 
   ub2 spos=0,sposz=0;
   char spool[Spool];
@@ -2619,7 +2701,7 @@ static int wrfile(void)
   lfp.fd = -1;
 
   static struct bufile lhfp;
-  ub4 lhdrbuf = (kwhshlen + dunhshlen) * 4U + nset * 32U + nstate * 16U + 0x1000U;
+  ub4 lhdrbuf = (kwhshlen + dun0hshlen + dun1hshlen) * 6 + nset * 32U + nstate * 16U + 0x1000U;
 
   lhfp.nam = lhdrname;
   lhfp.dobck = 1;
@@ -2803,7 +2885,7 @@ static int wrfile(void)
 
     // keyword and bltin hashes
     if (nkwd && hikwlen > 2) {
-      hc = wrhsh(&lhfp,&sfp,"tkw",tkwds,tkwlens,nkwd < ntkwd ? tkwdmap : nil,ntkwd,kwhsh,kwhshlen);
+      hc = wrhsh(&lhfp,&sfp,"tkw",tkwds,tkwlens,nkwd < ntkwd ? tkwdmap : nil,ntkwd,kwhsh,kwhshlen,1);
 
       if (sfp.top) myfprintf(&sfp,"static const ub4 kwnamhsh = 0x%x;\n\n",hc);
 
@@ -2830,22 +2912,26 @@ static int wrfile(void)
     }
     if (nblt) {
       myfprintf(&lhfp,"#define Bltcnt %u\n",nblt);
-      wrhsh(&lhfp,&sfp,"Bblt",blts,bltlens,nil,nblt,blthsh,blthshlen);
+      wrhsh(&lhfp,&sfp,"Bblt",blts,bltlens,nil,nblt,blthsh,blthshlen,1);
     }
     if (ndun) {
       myfprintf(&lhfp,"#define Duncnt %u\n",ndun);
-      wrhsh(&lhfp,&sfp,"Ddun",duns,dunlens,nil,ndun,dunhsh,dunhshlen);
+      wrhsh(&lhfp,&sfp,"Ddun0",duns,dunlens,nil,ndun,dun0hsh,dun0hshlen,1);
+      wrhsh(&lhfp,&sfp,"Ddun1",duns,dunlens,nil,ndun,dun1hsh,dun1hshlen,0);
     }
 
     myfprintf(&lhfp,"#define Hshseed   0x%x\n",hshseed);
-    myfprintf(&lhfp,"#define Hshdseed  0x%x\n",dhshseed);
-    myfprintf(&lhfp,"#define Hshdshift 0x%x\n\n",dunhshshift);
+    myfprintf(&lhfp,"#define Hshd0seed  0x%x\n",d0hshseed);
+    myfprintf(&lhfp,"#define Hshd1seed  0x%x\n",d1hshseed);
+    myfprintf(&lhfp,"#define Hshd0shift 0x%x\n\n",dun0hshshift);
+    myfprintf(&lhfp,"#define Hshd1shift 0x%x\n\n",dun1hshshift);
 
     if (havesfp) {
       info("wrote %s",shdrname);
       myfclose(&sfp);
     }
 
+#if 0
     if (nkwd && lokwlen < 3) {
       myfprintf(&lhfp,"static inline enum Token lookupkw2(ub1 c,ub1 d)\n{\n");
       ub1 kno = 0;
@@ -2858,6 +2944,7 @@ static int wrfile(void)
       myfprintf(&lhfp,"  else return T99_count;\n");
       myfprintf(&lhfp,"}\n\n");
     } else myfprintf(&lhfp,"#define lookupkw2(c,d) T99_count\n\n");
+#endif
 
     if (nkwd && hikwlen > 2) {
       wrhshlut(&lhfp,"kw",kwhshlut);
@@ -2866,6 +2953,8 @@ static int wrfile(void)
     if (nblt && hibltlen > 2) {
       wrhshlut(&lhfp,"blt",blthshlut);
     }
+
+#if 0
     if (nblt && lobltlen < 3) {
       myfprintf(&lhfp,"static inline enum Token lookupblt2(ub1 c,ub1 d)\n{\n");
       ub1 kno = 0;
@@ -2878,7 +2967,9 @@ static int wrfile(void)
       myfprintf(&lhfp,"  else return B99_count;\n");
       myfprintf(&lhfp,"}\n\n");
     } else myfprintf(&lhfp,"#define lookupblt2(c,d) B99_count\n\n");
+#endif
 
+#if 1
     if (ndun && lodunlen < 3) {
       myfprintf(&lhfp,"static inline enum Token lookupdun2(ub1 c,ub1 d)\n{\n");
       ub1 kno = 0;
@@ -2891,6 +2982,7 @@ static int wrfile(void)
       myfprintf(&lhfp,"  else return D99_count;\n");
       myfprintf(&lhfp,"}\n\n");
     } else myfprintf(&lhfp,"#define lookupdun2(c,d) D99_count\n\n");
+#endif
 
     // error codes
     if (lxe_count) myfprintf(&lhfp,"#define Lxercnt %u\n",lxe_count);
@@ -3022,7 +3114,7 @@ static int wrfile(void)
     }
 
     vrb("st %u tt %u %u",st0,ttndx,ttend);
-    if (ttend - ttndx < 2) serror(lno|Lno,"state %s has only one pattern",st0nam);
+    if (ttend - ttndx < 2) sinfo(lno|Lno,"state %s has only one pattern",st0nam);
 
     ccnt = tcnt = ucnt = ocnt = loopc1 = 0;
     minlen = Cclen;
@@ -3031,6 +3123,7 @@ static int wrfile(void)
 
     ctl = 0;
     memset(looptab,0,256);
+    memset(ctltab,0,512);
     for (ttndx2 = ttndx; ttndx2 < ttend; ttndx2++) {
       tp = transtab + ttndx2;
       st = tp->st;
@@ -3048,22 +3141,26 @@ static int wrfile(void)
       case Cc_z:
       case Cc_r:
       case Cc_q: ccnt++; break;
-      case Cc_c: ccnt++; if (tp0->nowhile == 0 && tp->st == st0 && len == 1 && tp->act >= nact && tp->codlen == 0) {
-                           if (loopc1 == 0) loopc = s;
-                           loopc1++;
-                         } else if (len > 1) looptab[s] = 1;
-                         break;
-      case Cc_t: if (s >= nsets) err(tp,st,"invalid t set %u",s);
+      case Cc_c: ccnt++; ctltab[s] = lno;
+                 if (tp0->nowhile == 0 && tp->st == st0 && len == 1 && tp->act >= nact && tp->codlen == 0) {
+                   if (loopc1 == 0) loopc = s;
+                   loopc1++;
+                 } else if (len > 1) looptab[s] = 1;
+      break;
+
+      case Cc_t: if (s >= nsets) err(tp,st,"invalid t set %u/%u",s,nsets);
                  if (len == 1 && !dobt) tcnt++;
-                 break;
+      break;
+
       case Cc_u: ucnt++; break;
       case Cc_x: ocnt++; if (ttndx2 != ttend-1) err(tp,st,"state %u: other needs to be last",st0);
                  if (dobt) dotswitch = 0;
-                 break;
+      break;
       case Cc_e: if (prvctl == Cc_c) ccnt++; break;
       }
     }
-    if (ccnt + tcnt + ucnt + ocnt < 2) err(tp0,st0,"only one pattern for %u c entries",ccnt);
+    totcnt = ccnt + tcnt + ucnt + ocnt;
+    if (totcnt < 2) sinfo(0,"one pattern for %u c entries",ccnt);
     if (loopc1 == 1 && looptab[loopc]) loopc1 = 0;
 
     if (minlen == 0) {
@@ -3076,11 +3173,15 @@ static int wrfile(void)
     tktabcnt = 0;
     hitktab = 0;
 
-    if (ccnt > 9 && tcnt > 9) {
-      err(tp0,st0,"mixed types: %u c %u t",ccnt,tcnt);
+    if (ccnt + ucnt > 9 && tcnt > 9) {
+      for (c = 0; c < 256; c++) {
+        lno = ctltab[c];
+        if (lno) sinfo(lno|Lno,"ctype '%s'",chprint(c));
+      }
+      err(tp0,st0,"mixed types: %u c %u t %u u",ccnt,tcnt,ucnt);
 
     // prepare switch for t
-    } else if (dotswitch && tcnt > 2) {
+    } else if (dotswitch && tcnt > 3) {
 
       memset(ctbl,0xff,nsets);
       memset(ttbl,0xff,nsets);
@@ -3124,7 +3225,7 @@ static int wrfile(void)
           tk = tp->tk;
           lno = tp->ln;
         }
-        mysnprintf(ctuval,0,Ctulen,"\t// t=%s ln %u",setnams + t * Snam,lno);
+        mysnprintf(ctuval,0,Ctulen,"\t// t=%s%cln %u",setnams + t * Snam,ena_lno,lno);
 
         if (isany && !haveany) {
           bpos += mysnprintf(buf,bpos,blen,"&&lx_error%c,%s implied ot ",passc,ctuval);
@@ -3190,7 +3291,8 @@ static int wrfile(void)
     }
 
     // each state
-    bpos = mysnprintf(buf,0,blen,"\n// %.*s ln %u ",stdesclens[st0],stdescs[st0],lno);
+    bpos = mysnprintf(buf,0,blen,"\n// %.*s ",stdesclens[st0],stdescs[st0]);
+    if (ena_lno) bpos += mysnprintf(buf,0,blen,"ln %u ",lno);
     if (tp0->cmt && tp0->cmtlen) { memcpy(buf+bpos,tp0->cmt,tp0->cmtlen); bpos += tp0->cmtlen; }
     bpos += mysnprintf(buf,bpos,blen," c %u  t %u  u %u\n",ccnt,tcnt,ucnt);
 
@@ -3207,7 +3309,11 @@ static int wrfile(void)
     bpos = 0;
 
     if (loopc1 == 1) bpos += mysnprintf(buf,bpos,blen,"while (sp[n] == '%s') n++; // %u \n  ",chprint(loopc),loopc);
-    bpos += mysnprintf(buf,bpos,blen,"c = sp[n%s]; // ln %u;\n",minlen ? "++" : "",lno);
+    if (totcnt > 1) {
+      bpos += mysnprintf(buf,bpos,blen,"c = sp[n%s];",minlen ? "++" : "");
+      if (ena_lno) bpos += mysnprintf(buf,bpos,blen," // ln %u",lno);
+      buf[bpos++] = '\n';
+    }
 
     ifcnt = 0;
     haveany = 0;
@@ -3302,7 +3408,9 @@ static int wrfile(void)
       if (s) bpos += mysnprintf(buf,bpos,blen," && sp[n-1] != '%s'",chprint(s));
 
       if (isany && dotswitch) {
-        bpos += mysnprintf(buf,bpos,blen,"; } // ln %u csw \n",lno);
+        bpos += mysnprintf(buf,bpos,blen,"; }");
+        if (ena_lno) bpos += mysnprintf(buf,bpos,blen," // ln %u csw",lno);
+        buf[bpos++] = '\n';
         myfprintf(&lfp,"%.*s",bpos,buf);
         bpos = 0;
         continue;
@@ -3345,7 +3453,9 @@ static int wrfile(void)
           if (pass1 && st == st0 && addtrace) { buf[bpos++] = '_'; buf[bpos++] = '1'; }
           buf[bpos++] = ';';
         }
-        bpos += mysnprintf(buf,bpos,blen," } // ln %u csw \n",lno);
+        bpos += mysnprintf(buf,bpos,blen," } // csw");
+        if (ena_lno) bpos += mysnprintf(buf,bpos,blen," ln %u",lno);
+        buf[bpos++] = '\n';
       }
       myfprintf(&lfp,"%.*s",bpos,buf);
       bpos = 0;
@@ -3391,7 +3501,9 @@ static int wrfile(void)
         }
       } else bpos += mysnprintf(buf,bpos,blen,"_%u_%u:",st0,lno);
 
-      bpos += mysnprintf(buf,bpos,blen," // from %s.%s ln %u set %u ctl %u\n",st0nam,tp->pat,lno,s,ctl);
+      bpos += mysnprintf(buf,bpos,blen," // from %s.%s set %u ctl %u",st0nam,tp->pat,s,ctl);
+      if (ena_lno) bpos += mysnprintf(buf,bpos,blen," ln %u",lno);
+      buf[bpos++] = '\n';
 
       if (tp->codlen) {
         bpos = wrcode(buf,bpos,blen,tp->codlen,tp->code,lno);
@@ -3403,7 +3515,8 @@ static int wrfile(void)
       }
       if (tp->actstate == 0) bpos += mysnprintf(buf,bpos,blen,"  goto lx%c_%.*s%s;",passc,stlens[st],states[st],pass1 && st == st0 && addtrace ? "_1" : "");
 
-      bpos += mysnprintf(buf,bpos,blen," // ln %u tsw\n",lno);
+      if (ena_lno) bpos += mysnprintf(buf,bpos,blen," // ln %u tsw",lno);
+      buf[bpos++] = '\n';
     } // each pat in switch
 
     if (tktabcnt) {

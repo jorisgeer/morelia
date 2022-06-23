@@ -152,6 +152,59 @@ static void precexp(struct ast *ap,struct rexp *rxp,ub4 *ops,ub4 *src,ub2 n)
   rxp->hit = hit;
 }
 
+static enum Bop lx2bop(ub2 c) {
+  if (c & 0x200) {
+    switch(c & 0xff) {
+    case '<': return Oshl;
+    case '>': return Oshr;
+    case '*': return Oexp;
+    case '/': return ODiv;
+    }
+  } else if (c & 0x100) {
+    switch(c & 0xff) {
+    case '<': return Ole;
+    case '>': return Oge;
+    case '=': return Oeq;
+    case '!': return One;
+    }
+  } else {
+    switch(c) {
+    case '<': return Olt;
+    case '>': return Ogt;
+    case '+': return Oadd;
+    case '-': return Osub;
+    case '*': return Omul;
+    case '/': return Odiv;
+    case '%': return Omod;
+    case '@': return Omxm;
+    case '&': return Oand;
+    case '|': return Oor;
+    case '^': return Oxor;
+    }
+  }
+  return Oeq;
+}
+
+static enum Bop lx2aop(ub1 c)
+{
+  return lx2bop(c & 0x1ff);
+}
+
+static enum Uop lx2uop(ub1 c)
+{
+  enum Uop o;
+
+  switch (c) {
+  case '*': o = Oumin; break;
+  case '~': o = Oneg;  break;
+  case '!': o = Onot;  break;
+  case '+': o = Oupls; break;
+  case '-': o = Oumin; break;
+  default: o = Oucnt;
+  }
+  return o;
+}
+
 static cchar *tknam(enum token tk)
 {
   ub2 len;
@@ -815,7 +868,7 @@ static ub4 *process(struct ast *ap,bool emit)
           case Akwd:
             tk = nh & Atymsk;
             switch(tk) {
-            case tbreak: break;
+            case _tbreak: break;
             default: break;
             }
             break;
@@ -857,18 +910,18 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   ub4 *tis = sa->tis;
 
   const enum Token * restrict tks = lsp->toks;
-  const ub1 * restrict atrs   = lsp->atrs;
+  const ub2 * restrict atrs   = lsp->atrs;
   const ub4 * restrict fpos   = lsp->fpos;
   ub4 fps=0;
   ub4 ti;
 
   ub4 nvar,nuex,nbex;
   ub4 repos=0;
-  ub4 a=0,a0=0,a1=0,ni,ni0,i,ii,i0,ai;
+  ub4 a=0,a0=0,a1=0,ni,ni0,ii,i0,ai;
   ub4 fpos_ilit=0;
   ub2 dfp;
   ub4 bits=0;
-  ub1 atr;
+  ub2 atr;
 
   cchar *name = lsp->name;
 
@@ -893,8 +946,6 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   bool emit = (globs.emit & Astpas);
 
   sassert(Acount <= Atymsk,"atypes");
-  sassert(Obcnt <= Aopmsk,"opbits");
-  sassert(Acount < 32,"Aback");
 
   ub4 rndcnt = sa->ndcnt;
   ub4 aidcnt = sa->aidcnt;
@@ -1075,10 +1126,10 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     info("ni %u lvl %u ve %u args %x",rni,rp->lvl,ve,am);
 
     gi = rp->ni;
+
     nh = nhs[gi];
 
     t = nh >> Atybit;
-    i = (nh >> Aopbit) & Aopmsk;
 
     ni = nh & Atymsk;
 
@@ -1140,7 +1191,8 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     case Afal:
     case Akwd:
 
-    case Aop:   break;
+    case Aop:
+    break;
 
     // exp nodes
     case Asubscr:
@@ -1152,13 +1204,13 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     case Apexp:
       pexpp = pexps + ni;
       pexpp->e = a0;
-      pexpp->op = a1 >> Aopbit;
+      pexpp->op = lx2bop(a1);
     break;
 
     case Auexp:
       uexpp = uexps + ni;
       uexpp->e = a0;
-      uexpp->op = a1 >> Aopbit;
+      uexpp->op = lx2uop(a1);
     break;
 
     case Abexp: break;
@@ -1395,8 +1447,8 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
     case Akwd:
       switch(ni) {
-      case tbreak:
-      case tcontinue: info("%s",tknam(ni)); break;
+      case _tbreak:
+      case _tcontinue: info("%s",tknam(ni)); break;
       default: break;
       }
      break;
