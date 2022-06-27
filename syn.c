@@ -383,7 +383,8 @@ static void __attribute__ ((format (printf,10,11))) sdiafln(
                 else if (lat >= La_ilit4) pos += mysnprintf(buf,pos,len,"%lu",bits);
                 else pos += mysnprintf(buf,pos,len,"%u",atr);
                 break;
-    case Tslit: id = hi32;
+    case Tslit:
+    case Tflit: id = hi32;
                 if (lat == La_slits) id = atr;
                 else if (lat == La_slit) id = bits;
                 else if (lat == 0) buf[pos++] = atr;
@@ -749,6 +750,7 @@ nxtsym:
             break;
 
           case Tslit:
+          case Tflit:
             switch (lat) {
             case 0:
             case La_slit: bits = tkbits[bi++];
@@ -863,6 +865,7 @@ nxtsym:
             break;
 
           case Tslit:
+          case Tflit:
             switch (lat) {
             case 0:
             case La_slit: bits = tkbits[bi++];

@@ -22,6 +22,7 @@
 enum Astyp { Aid,Avar,Ailit,Ailitn,Aflit,Aslit,Ailits,Ailitns,Atru,Afal,Akwd,
   Aop,
   Asubscr,
+  Afstr,
   Apexp,Auexp,Abexp,Aaexp,Agrpexp,
   Ablk,
   Aif,
@@ -31,7 +32,8 @@ enum Astyp { Aid,Avar,Ailit,Ailitn,Aflit,Aslit,Ailits,Ailitns,Atru,Afal,Akwd,
   Aasgnst,
   Aexpst,
   Astmt,
-  Arexp,Aprmlst,Astmtlst,Acount };
+  Afstring,
+  Arexp,Afstrlst,Aprmlst,Astmtlst,Acount };
 
 enum Packed8 Uop { Onot,Oneg,Oumin,Oupls,Oucnt };
 enum Packed8 Bop { Onil,Orelor,Oreland,One,Oeq,Oshl,Oshr,Oxor,Oor,Oand,Oadd,Osub,Omul,Odiv,ODiv,Omod,Omxm,Oexp,Olt,Ogt,Ole,Oge,Obcnt };

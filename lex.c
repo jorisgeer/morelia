@@ -84,11 +84,12 @@ struct diamod dia_lex = { dianames,dialvls,Diatag_count };
 
 #define Slitint 256
 
-#ifdef Lang_stresc
-enum Esc { Esc_inv,Esc_nl,Esc_o,Esc_x,Esc_u,Esc_U,Esc_N,Esc_a=7,Esc_b,Esc_t,Esc_n,Esc_v,Esc_f,Esc_r };
+enum Packed8 Esc { Esc_inv,Esc_nl,Esc_o,Esc_x,Esc_u,Esc_U,Esc_N,Esc_a=7,Esc_b,Esc_t,Esc_n,Esc_v,Esc_f,Esc_r };
 
 static const enum Esc esctab[128] = {
   ['\n'] = Esc_nl,
+  ['\''] = '\'',
+  ['"'] = '"',
   ['0'] = Esc_o, ['1'] = Esc_o, ['2'] = Esc_o, ['3'] = Esc_o, ['4'] = Esc_o, ['5'] = Esc_o, ['6'] = Esc_o, ['7'] = Esc_o,
   ['t'] = Esc_t,
   ['n'] = Esc_n,
@@ -98,12 +99,6 @@ static const enum Esc esctab[128] = {
   ['x'] = Esc_x,
   ['u'] = Esc_u, ['U'] = Esc_U,
   ['N'] = Esc_N
-};
-#endif
-
-static const ub1 slitpfxs[26] = {
-  ['f' - 'a'] = 2,
-  ['r' - 'a'] = 1
 };
 
 #undef ice
@@ -217,47 +212,31 @@ static cchar *tknam(enum Token tk)
   return buf;
 }
 
-static Noret void lxerror(ub4 ln,ub4 col,ub2 specln,char c,enum Lxerror ec)
+static Noret void lxerror(ub4 ln,ub4 col,ub2 specln,ub4 c,cchar *msg)
 {
   char buf[1024];
   ub4 pos=0,blen = 1024;
-  cchar *es = "";
-
-  switch (ec) {
-#ifdef Lxercnt
-  case Lxe_str_nl: es = "newline in string"; break;
-#endif
-  case Lxe_count: break;
-  }
 
   if (pass == 2) pos = mysnprintf(buf,0,blen,"pass 2 ");
+  if (verbose) pos += mysnprintf(buf,pos,blen,"%s.%u ",specnam,specln);
 
-  pos += mysnprintf(buf,pos,blen,"unexpected chr '%s' : %s",chprint(c),es);
-  if (verbose) pos += mysnprintf(buf,pos,blen," %s.%u",specnam,specln);
+  pos += mysnprintf(buf,pos,blen,"at char '%s' : ",chprint(c));
 
-  vpmsg(FLN,Fatal,srcnam,ln,col,buf,nil,nil);
+  vpmsg(FLN,Fatal,srcnam,ln+1,col+1,buf,nil,msg ? msg : "unexpected");
   doexit(1);
 }
 
-static void lxwarn(ub4 ln,ub4 col,ub2 specln,char c,enum Lxerror ec)
+static void lxwarn(ub4 ln,ub4 col,ub2 specln,ub4 c,cchar *msg)
 {
   char buf[1024];
   ub4 pos=0,blen = 1024;
-  cchar *es = "";
-
-  switch (ec) {
-#ifdef Lxercnt
-  case Lxe_str_nl: es = "newline in string"; break;
-#endif
-  case Lxe_count: break;
-  }
 
   if (pass == 2) pos = mysnprintf(buf,0,blen,"pass 2 ");
+  if (verbose) pos += mysnprintf(buf,pos,blen,"%s.%u ",specnam,specln);
 
-  pos += mysnprintf(buf,pos,blen,"unexpected chr '%s' : %s",chprint(c),es);
-  if (verbose) pos += mysnprintf(buf,pos,blen," %s.%u",specnam,specln);
+  pos += mysnprintf(buf,pos,blen,"at char '%s' : ",chprint(c));
 
-  vpmsg(FLN,Warn,srcnam,ln,col,buf,nil,nil);
+  vpmsg(FLN,Warn,srcnam,ln+1,col+1,buf,nil,msg ? msg : "unexpected");
 }
 
 #ifdef __clang__
@@ -802,7 +781,6 @@ static int tryopen(cchar *dir,cchar *name,bool need)
   return fd;
 }
 
-#ifdef Lang_stresc
 static ub1 lxatox1(ub1 c)
 {
   ub1 x;
@@ -842,15 +820,22 @@ static ub4 doescu(const ub1 * restrict src,ub4 sn,ub1 *pool,ub4 *plitx,ub1 ctl)
   switch(ctl) {
   case 'U': serror(sn,"\\Uxx.. in  string lits at pos %u TODO",litx);
   case 'u': serror(sn,"\\uxx.. in  string lits at pos %u TODO",litx);
-  case 'N': serror(sn,"\\N{..} in  string lits at pos %u TODO",litx);
   }
   return sn+1;
 }
-#endif
+
+static ub4 doescn(const ub1 * restrict src,ub4 sn,ub1 *pool,ub4 *plitx)
+{
+  ub4 litx = *plitx;
+
+  pool[litx] = *src;
+  serror(sn,"\\N{..} in  string lits at pos %u TODO",litx);
+  return sn+1;
+}
 
 #define Dent 256
 
-enum Slitctl { Slit_none,Slit_f=1,Slit_r=2,Slit_l=4,Slit_b=8,Slit_u=16 };
+// enum Slitctl { Slit_none,Slit_f=1,Slit_r=2,Slit_l=4,Slit_b=8,Slit_u=16 };
 
 #define B32max (1U << 30)
 #define X32max 0xfffffff
@@ -930,6 +915,7 @@ static void doemit(struct lexsyn *lsp,cchar *name,bool emit,bool log)
     break;
 
     case Tslit:
+    case Tflit:
                 if (at == 0) pos += mysnprintf(buf,pos,blen,"'%s'",chprint(atr)); // slit 1
                 else if (at == La_slit2) pos += mysnprintf(buf,pos,blen,"'%s%s'",chprint(atr >> 8),chprint(atr & 0xff));
                 else if (at == La_slit4) {
@@ -962,7 +948,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   ub4 len;
   ub2 len2;
 
-  enum Slitctl slitctl=0,fstrctl=0;
+  ub1 slitctl=0,orgslitctl=0;
   bool litbin = 1;
   bool litfpi=0;
 
@@ -993,14 +979,14 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   const ub1 *idp;
 
   // indent
-  static ub2 dentst[Dent];
+  ub2 dentst[Dent];
   ub2 dent;
   ub2 dentlvl=0;
 
   // braces
   ub4 bolvls[Depth];
   ub1 bolvlc[Depth];
-  ub2 bolvl=0;
+  ub2 bolvl=0,fsxplvl=0;
 
 // line/col/dent
   ub4 l=0;
@@ -1039,7 +1025,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   flitpos=0;
 
   dentlvl=0;
-  dentst[0] = 0;
+  memset(dentst,0,sizeof(dentst));
 
   idsketch = 0;
 
@@ -1050,7 +1036,7 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
 
   ub1 Q = 0;
   ub4 N = 0;
-  ub1 R0 = 0,R1 = 0,R2 = 0;
+  ub1 R0 = 0,R1 = 0,R2 = 0,orgR0;
   ub1 sign = 0;
 
   ub4 id=0;
@@ -1069,8 +1055,6 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   bool fxs=0;
 
   // f-strings
-  ub1 fstrco=0;
-  ub1 fstrQ=0;
 
   enum Token kwd;
   enum token kw;
@@ -1230,8 +1214,8 @@ static int lex(struct fnaminf *mf,const unsigned char * restrict sp,ub4 slen,str
   fxp = 0;
   fdp = 0;
 
-  fstrco=0;
-  fstrQ=0;
+  slitctl = orgslitctl = 0;
+  R0 = 0;
 
   dentlvl=0;
   dentst[0] = 0;
@@ -1493,7 +1477,7 @@ int lexstr(const unsigned char * restrict str,ub2 slen,struct lexsyn *lsp,ub8 T0
   int rv;
 
   fb = getsrcmfile();
-  fb->path = "(cmdline)";
+  fb->path = srcnam = "(cmdline)";
 
   char *src = minalloc(slen + 8,1,0,"lex -c src");
   memcpy(src,str,slen);

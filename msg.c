@@ -259,14 +259,14 @@ static void msgps(ub4 shfln,enum Msglvl lvl,cchar *srcnam,ub4 lno,ub4 col,cchar 
 
   if (dotim) pos += mysnprintf(buf,pos,maxlen,"%4u ",(ub4)dt);
 
-  if (shfln && shfln != hi32 && (msgopts & Msg_shcoord)) pos += mysnprintf(buf,pos,maxlen,"%6s.%-4u ",shfnam,shlno);
+  if (shfln && shfln != hi32 && (msgopts & Msg_shcoord)) pos += mysnprintf(buf,pos,maxlen,"%7s.%-4u ",shfnam,shlno);
 
   if (msgopts & Msg_Lvl) {
-    if (lvl < Info) pos += mysnprintf(buf,pos,maxlen," " Clr0 "%c" Clr1 " ",lvlclr[lvl],*lvlnam);
-    else { buf[pos++] = ' '; buf[pos++] = *lvlnam; buf[pos++] = ' '; }
+    if (lvl < Info) pos += mysnprintf(buf,pos,maxlen,Clr0 "%c" Clr1 " ",lvlclr[lvl],*lvlnam);
+    else { buf[pos++] = *lvlnam; buf[pos++] = ' '; }
   }
 
-  if (lvl < Info || (msgopts & Msg_lvl)) pos += mysnprintf(buf,pos,maxlen,"%-8s`z",lvlnam);
+  if (lvl < Info || (msgopts & Msg_lvl)) pos += mysnprintf(buf,pos,maxlen,"%-8s`z ",lvlnam);
 
   if (srcnam) {
     if (msgopts & Msg_fno) {

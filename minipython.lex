@@ -30,6 +30,7 @@ token
   id
   nlit
   slit
+  flit
 
 # group 1 - operators and (aug)assign
   op 1
@@ -50,7 +51,8 @@ token
   colon 4
   sepa 4
   comma 4
-#  dot
+  dot 4
+  ell 4
 
 set
   aa a
@@ -89,22 +91,25 @@ set
 keyword
 #  and -> && op
   as
+  assert
   def
-#  del
-#  elif
+  del
+  elif
   else
-#  for
-#  from
+  for
+  from
+  global
   if
-#  import
+  import
   in
   is
+  nonlocal
   not
 #  or -> || op
-#  pass
-#  return
+  pass
+  return
   while
-#  with
+  with
   break|continue=ctlxfer
 
 `Bbuiltin
@@ -335,19 +340,16 @@ doflitfr
 # ----------------------
 # \xx in string literal
 # ----------------------
-`A doesc
- c = sp[n];
- if (R0 == 0) { // raw
-    if (c == '\n') { lntab[l] = n; nlcol = n++; }
-    else if (c == Q) { slitpool[slitx++] = '\\'; slitpool[slitx++] = Q; n++; }
- } else {
-  x1 = esctab[c];
+doesc
+  c = sp[n];
+  if (c < 0x80) x1 = esctab[c];
+  else x1 = 0;
   switch(x1) {
   case Esc_nl: lntab[l] = n; nlcol=n; break;
 .
   case Esc_o: x1=doesco(sp,n); slitpool[slitx++] = x1; n += 3; break;
   case Esc_x: x1=doescx(sp,n); n += 2;
-              if (x1 < 0x80 || (slitctl & Slit_b) ) slitpool[slitx++] = x1;
+              if (x1 < 0x80 || (slitctl & 4) ) slitpool[slitx++] = x1;
               else { // utf8
                 slitpool[slitx]   = 0xc0 | (x1 >> 6);
                 slitpool[slitx+1] = 0x80 | (x1 & 0x3f);
@@ -356,14 +358,8 @@ doflitfr
               break;
 .
   case Esc_u:
-  case Esc_U:
-  case Esc_N: if (slitctl & Slit_b) {
-                swarn(n,"unrecognised escape sequence '\\%s'",chprint(c));
-                slitpool[slitx] = '\\';
-                slitpool[slitx+1] = c;
-                n += 2; slitx += 2;
-              } else n=doescu(sp,n,slitpool,&slitx,x1);
-              break;
+  case Esc_U: n=doescu(sp,n,slitpool,&slitx,x1); break;
+  case Esc_N: n=doescn(sp,n,slitpool,&slitx); break;
 .
   case Esc_inv: swarn(n,"unrecognised escape sequence '\\%s'",chprint(c));
                 slitpool[slitx] = '\\';
@@ -373,13 +369,17 @@ doflitfr
 .
   default:    slitpool[slitx++] = x1; n++;
   }
- }
+  switch (slitctl) {
+  case 1: goto `rslit;
+  case 2: goto `fslit;
+  case 3: goto `frslit;
+  }
 
 # ----------------------
 # start of string literal
 # ----------------------
 slit0
-  if (tks[dn-1] == Tslit) { // merge dup
+  if (tks[dn-1] == Tslit || tks[dn-1] == Tflit) { // merge dup
     dn--;
     slitx = slitpx;
     slitpos = slitppos;
@@ -391,7 +391,7 @@ slit0
 # end of string literal
 # ----------------------
 .slit2
-  R0=R1=0;
+  R0=slitctl=0;
   len = slitx - slitpos;
   slitpx = slitx;
   switch(len) {
@@ -412,10 +412,11 @@ slit0
     else { bits[bn++] = id; atrs[dn] = La_slit | len; }
   }
 
-.slit1
-  R0=R1=0;
+slit1
+  R0=slitctl=0;
   len = n - N;
   slitpos += len;
+.
   switch(len) {
   case 1: slit1cnt++; break;
   case 2: slit2cnt++; break;
@@ -439,6 +440,7 @@ id2prv
 # 2 char
 id2
 1 id2cnt++;
+  info("id2 '%s' '%s'",chprint(prvc1),chprint(prvc2));
 1 id2chr[prvc1] = 1;
 1 id2chr[prvc2] = 2;
 2 id = id2getadd(prvc1,prvc2);
@@ -447,7 +449,7 @@ id2
 # 3+ char
 id
   len = n - N;
-1 if (len >= Idlen) lxerror(l,0,`L,c,Lxe_count); // lx_error(l,0,`L,"id '%.*s' len %u exceeds %u",16,sp+N,len,Idlen);
+1 if (len >= Idlen) lxerror(l,0,`L,len,"exceeding ID length limit"); // lx_error(l,0,`L,"id '%.*s' len %u exceeds %u",16,sp+N,len,Idlen);
   len2 = len;
   if (N & 3) {
     memcpy(albuf,sp+N,len2);
@@ -480,10 +482,10 @@ id
     len2 = len - 2;
     if (len == 2) dun = lookupdun2(sp[N],sp[N+1]);
     else dun = lookupdun(sp+N,len2);
-    if (dun == D99_count) lxwarn(l,0,`L,c,Lxe_count);
+    if (dun == D99_count) lxwarn(l,0,`L,c,"unknown dunder");
     atrs[dn] = dun | La_iddun;
   } else { // class-private
-1   if (len >= Idlen) lxerror(l,0,`L,c,Lxe_count);
+1   if (len >= Idlen) lxerror(l,0,`L,len,"exceeding ID len limit");
     len2 = len;
     if (N & 3) {
       memcpy(albuf,sp+N,len2);
@@ -503,28 +505,56 @@ id
 # slit prefix
 # ----------------------
 dopfx1
-  x1 = slitpfxs[sp[n-1] | 0x20];
-  R1 = x1 & 1;
-  R2 = (x1 >> 1) & 1;
-  if (tks[dn-1] == Tslit) { // merge dup
-    slitx = slitpx;
-    slitpos = slitppos;
-  } else {
-    slitx = slitpos;
+  switch (sp[n-2] | 0x20) {
+  case 'b': slitctl=4; break;
+  case 'r': slitctl=1; break;
+  case 'f': slitctl=2; break;
+  case 'u': break;
+1 default: lxerror(l,0,`L,c,"unknown slit prefix");
+  }
+.
+2 if (tks[dn-1] == Tslit || tks[dn-1] == Tflit) { // merge dup
+2   dn--;
+2   slitx = slitpx;
+2   slitpos = slitppos;
+2 } else {
+2   slitx = slitpos;
+2 }
+.
+  switch (slitctl) {
+  case 1: goto `rslit0;
+  case 2: goto `fslit0;
+  default: goto `slit0;
   }
 
 dopfx2
-  x1 = slitpfxs[sp[n-1] | 0x20];
-  R1 = x1 & 1;
-  R2 = (x1 >> 1) & 1;
-  x1 = slitpfxs[sp[n-2] | 0x20];
-  R1 |= x1 & 1;
-  R2 |= (x1 >> 1) & 1;
-  if (tks[dn-1] == Tslit) { // merge dup
-    slitx = slitpx;
-    slitpos = slitppos;
-  } else {
-    slitx = slitpos;
+  switch (sp[n-1] | 0x20) {
+  case 'b': slitctl=4; break;
+  case 'r': slitctl=1; break;
+  case 'f': slitctl=2; break;
+  case 'u': break;
+1 default: lxerror(l,0,`L,c,"unknown slit prefix");
+  }
+  switch (sp[n-2] | 0x20) {
+  case 'b': slitctl|=4; break;
+  case 'r': slitctl|=1; break;
+  case 'f': slitctl|=2; break;
+  case 'u': break;
+1 default: lxerror(l,0,`L,c,"unknown slit prefix");
+  }
+.
+2 if (tks[dn-1] == Tslit || tks[dn-1] == Tflit) { // merge dup
+2   dn--;
+2   slitx = slitpx;
+2   slitpos = slitppos;
+2 } else {
+2   slitx = slitpos;
+2 }
+.
+  switch (slitctl) {
+  case 1: goto `rslit0;
+  case 2: goto `fslit0;
+  case 3: goto `frslit0;
   }
 
 # ----------------------
@@ -563,7 +593,7 @@ dodent
 # opening { [ (
 # ----------------------
 dobo
-  if (bolvl + 1 >= Depth) lxerror(l,0,`L,c,Lxe_count);
+1 if (bolvl + 1 >= Depth) lxerror(l,0,`L,bolvl,"exceeding nesting depth");
   bolvls[bolvl] = n;
   bolvlc[bolvl] = c;
   bolvl++;
@@ -572,25 +602,26 @@ dobo
 # closing ]
 # ----------------------
 dosc
-  if (bolvl == 0) lxerror(l,0,`L,c,Lxe_count);
+1 if (bolvl == 0) lxerror(l,0,`L,c,"unbalanced");
   bolvl--;
-  if (bolvlc[bolvl] != '[') lxerror(l,0,`L,c,Lxe_count);
+1 if (bolvlc[bolvl] != '[') lxerror(l,0,`L,c,"unmatched");
 
 # ----------------------
 # closing )
 # ----------------------
 dorc
-  if (bolvl == 0) lxerror(l,0,`L,c,Lxe_count);
+1 if (bolvl == 0) lxerror(l,0,`L,c,"unbalanced");
   bolvl--;
-  if (bolvlc[bolvl] != '(') lxerror(l,0,`L,c,Lxe_count);
+1 if (bolvlc[bolvl] != '(') lxerror(l,0,`L,c,"unmatched");
 
 # ----------------------
 # closing }
 # ----------------------
 docc
-  if (bolvl == 0) lxerror(l,0,`L,c,Lxe_count);
+  if (bolvl == fsxplvl) { slitctl = orgslitctl; R0 = orgR0; goto `fslit; }
+1 else if (bolvl == 0) lxerror(l,0,`L,c,"unbalanced");
   bolvl--;
-  if (bolvlc[bolvl] != '{') lxerror(l,0,`L,c,Lxe_count);
+1 if (bolvlc[bolvl] != '{') lxerror(l,0,`L,c,"unmatched");
 
 INIT
   bolvl = 0;
@@ -665,7 +696,7 @@ root
   ; . sepa
 
   , . comma
-#  . . dot
+  . dot
 
 # operators @ % & ^ | * ~
   o1 op11 . 2. atrs[dn] = c; Q=c;
@@ -677,6 +708,10 @@ root
   \`nl . . donl
 
   EOF EOF
+
+dot
+ .. root ell
+ ot -root dot
 
 # ---------------------
 # operators / augassign
@@ -724,24 +759,24 @@ a1
   nd root op 2. atrs[dn] = '&' | 0x80;
   s  root as
   an id2 . .N=n-1;
-  ot -root 2.id `prvc1 = 'a'; prvc2 = c;` id2
+  ot -root 2.id 1`id1cnt++;` 2`atrs[dn] = id1getadd('a') | La_id1;`
 
 i1
   f root if
   s root is
   n root in
   an id2 . .N=n-1;
-  ot -root 2.id `prvc1 = 'i'; prvc2 = c;` id2
+  ot -root 2.id 1`id1cnt++;` 2`atrs[dn] = id1getadd('i') | La_id1;`
 
 o1
   r root op 2. atrs[dn] = '|' | 0x80;
   an id2 . .N=n-1;
-  ot -root 2.id `prvc1 = 'i'; prvc2 = c;` id2
+  ot -root 2.id 1`id1cnt++;` 2`atrs[dn] = id1getadd('o') | La_id1;`
 
 u1
   _ dun0 . .N=n;
   an id2
-  ot -root id 2.atrs[dn] = La_id_;
+  ot -root 2.id 1`id1cnt++;` 2`atrs[dn] = La_id_;`
 
 dun0
   an dun1
@@ -764,12 +799,12 @@ dun
 # ---------------------
 id1
   an id2s
-  qq slit0 . 1`N=n;` `Q=c;` 2dopfx1
-  ot -root 2.id 1`id1cnt++;` 2`atrs[dn] = id1getadd(sp[N]) | La_id1 | La_idprv;`
+  qq . . 1`N=n;` `Q=c;` dopfx1
+  ot -root 2.id 1`id1cnt++;` 2`atrs[dn] = id1getadd(sp[N]) | La_id1;`
 
 id2s
   an id
-  qq slit0 . 1`N=n;` `Q=c;` 2dopfx2
+  qq . . 1`N=n;` `Q=c;` dopfx2
   ot -root . `prvc1 = sp[N]; prvc2 = c;` id2
 
 id2
@@ -868,8 +903,8 @@ ilit
 # int literal octal
 # ---------------------
 .ilito
-  8 Err
-  9 Err
+  8 . . .lxerror(l,n-nlcol,$L,c,"invalid digit in octal nlit");
+  9 . . .lxerror(l,n-nlcol,$L,c,"invalid digit in octal nlit");
   nm . . 2. if (litbin && u4v < D32max) u4v = u4v << 3 | (c - '0'); else litbin = 0;
   _
   ot -ilit
@@ -889,8 +924,9 @@ ilit
 slit0
   QQ slit . .R0=1; # start of long slit
   Q root 2.slit 1`slit0cnt++;` 2.atrs[dn] = 0; # empty short slit ''
+  \nl . . donl
   \ -slit
-1 nl Err-str-nl
+1 R00nl . . .lxerror(l,n-nlcol,$L,c,"newline in slit");
   ot slit . 2.slitpool[slitx++] = c;
 
 # ---------------------
@@ -898,12 +934,11 @@ slit0
 # ---------------------
 slit string literal
   Q slitq
-1 \nl . . donl
+  \nl . . donl
 1 \Q
-`A2  \ . . 2doesc
-`a2  \nl . . donl
-1 nl Err-str-nl
-  EOF Err
+2 \ slitesc
+1 R00nl . . .lxerror(l,n-nlcol,$L,c,"newline in slit");
+1 EOF  . . .lxerror(l,n-nlcol,$L,c,"unterminated slit");
   ot . . 2.slitpool[slitx++] = c;
 
 # possible end of slit
@@ -914,5 +949,111 @@ slitq
 
 # end of slit
 slit9
-1 ot -root .    slit1
-2 ot -root slit slit2
+  ot -root 2.slit 1slit1\
+                  2slit2
+
+# ---------------------
+# \ esc in slit or flit
+# ---------------------
+slitesc*
+  \ slit . 2doesc
+
+# ---------------------
+# raw string literal start
+# ---------------------
+rslit0*
+  QQ rslit . .R0=1; # start of long slit
+  Q root 2.slit 1`slit0cnt++;` 2.atrs[dn] = 0; # empty short slit ''
+  \ -rslit
+1 R00nl . . .lxerror(l,n-nlcol,$L,c,"newline in slit");
+  ot rslit . 2.slitpool[slitx++] = c;
+
+# ---------------------
+# raw string literal
+# ---------------------
+rslit string literal
+  Q rslitq
+  \nl . . 2`slitpool[slitx++] = '\\'; slitpool[slitx++] = '\n';` donl
+  \Q . . 2.slitpool[slitx++] = '\\'; slitpool[slitx++] = Q;
+1 R00nl . . .lxerror(l,n-nlcol,$L,c,"newline in slit");
+1 EOF  . . .lxerror(l,n-nlcol,$L,c,"unterminated slit");
+  ot . . 2.slitpool[slitx++] = c;
+
+# possible end of raw slit
+rslitq
+  R01QQ slit9 # end of long slit
+  R01   rslit  . 2. slitpool[slitx++] = Q; slitpool[slitx++] = c; # less than 3q in long slit
+  ot   -slit9 # end of short slit
+
+# ---------------------
+# fstring literal start
+# ---------------------
+fslit0*
+  QQ fslit . .R0=1; # start of long slit
+  Q root 2.slit 1`slit0cnt++;` 2.atrs[dn] = 0; info("empty slit %u",dn);  # empty short slit ''
+  { -fslit
+  \ -fslit
+1 R00nl . . .lxerror(l,n-nlcol,$L,c,"newline in slit");
+  ot fslit . 2.slitpool[slitx++] = c;
+
+# ---------------------
+# fstring literal
+# ---------------------
+fslit string literal
+  Q fslitq
+  {{ . . 2.slitpool[slitx++] = c;
+  }} . . 2.slitpool[slitx++] = c;
+  { root 2.flit .fsxplvl = bolvl; orgslitctl = slitctl; orgR0 = R0;\
+              1slit1\
+              2slit2
+  \nl . . donl
+1 \Q
+2 \ slitesc
+1 R00nl . . .lxerror(l,n-nlcol,$L,c,"newline in slit");
+1 EOF  . . .lxerror(l,n-nlcol,$L,c,"unterminated slit");
+  ot . . 2.slitpool[slitx++] = c;
+
+# possible end of fslit
+fslitq
+  R01QQ fslit9 # end of long slit
+  R01   fslit  . 2. slitpool[slitx++] = Q; slitpool[slitx++] = c; # less than 3q in long slit
+  ot   -fslit9 # end of short slit
+
+# ---------------------
+# raw fstring literal start
+# ---------------------
+frslit0*
+  QQ frslit . .R0=1; # start of long slit
+  Q root 2.slit 1`slit0cnt++;` 2.atrs[dn] = 0; # empty short slit ''
+  \ -frslit
+  { -frslit
+1 R00nl . . .lxerror(l,n-nlcol,$L,c,"newline in slit");
+  ot frslit . 2.slitpool[slitx++] = c;
+
+# ---------------------
+# raw fstring literal
+# ---------------------
+frslit string literal
+  Q frslitq
+  {{ . . 2.slitpool[slitx++] = c;
+  }} . . 2.slitpool[slitx++] = c;
+  { root 2.flit .fsxplvl = bolvl; orgslitctl = slitctl; orgR0 = R0;\
+              1slit1\
+              2slit2
+  \nl . . 2`slitpool[slitx++] = '\\'; slitpool[slitx++] = '\n';` donl
+  \Q . . 2.slitpool[slitx++] = '\\'; slitpool[slitx++] = Q;
+1 R00nl . . .lxerror(l,n-nlcol,$L,c,"newline in slit");
+1 EOF  . . .lxerror(l,n-nlcol,$L,c,"unterminated slit");
+  ot . . 2.slitpool[slitx++] = c;
+
+# possible end of fslit
+frslitq
+  R01QQ fslit9 # end of long slit
+  R01   frslit  . 2. slitpool[slitx++] = Q; slitpool[slitx++] = c; # less than 3q in long slit
+  ot   -fslit9 # end of short slit
+
+# end of fslit
+fslit9
+  ot -root 2.slit 1slit1\
+                  2slit2
+

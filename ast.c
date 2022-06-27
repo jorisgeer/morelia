@@ -580,6 +580,10 @@ static ub4 *process(struct ast *ap,bool emit)
 
     goto next;
 
+    case Afstr:
+    case Afstring:
+    break;
+
     // statements
     case Aasgnst: // a[i] = 3
       asgnstp = asgnsts + ni;
@@ -878,6 +882,9 @@ static ub4 *process(struct ast *ap,bool emit)
 
       break;
 
+    case Afstrlst:
+    break;
+
     case Acount: goto end;
     } // switch (typ)
 
@@ -1123,8 +1130,6 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
     am = rp->amask;
 
-    info("ni %u lvl %u ve %u args %x",rni,rp->lvl,ve,am);
-
     gi = rp->ni;
 
     nh = nhs[gi];
@@ -1133,18 +1138,23 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
     ni = nh & Atymsk;
 
+    info("ni %2u.%2u lvl %u ve %2u args %x %s`z",rni,ni,rp->lvl,ve,am,atynam(t));
+
     if (t <= Aval) {
       if (vi >= valcnt) ice(0,0,"out of range var %u",vi);
       val = vals[vi++];
       ainc = 0;
       ti = tis[gi];
       fps = fpos[ti];
-    } else {
+    } else if (t < Arexp) {
       ac = 0;
       a0 = args[napos] & hi56;
       a1 = args[napos+1] & hi56;
       a0h = nhs[a0];
       ainc = 2;
+    } else {
+      ainc = cnt = am;
+      if (cnt == 0) ice(0,0,"node %u empty %s`z list",gi,atynam(t));
     }
 
     switch (t) {
@@ -1221,6 +1231,10 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
       aexpp->e = a1;
     break;
 
+    case Afstr:
+    case Afstring:
+    break;
+
     case Aasgnst:
       asgnstp = asgnsts + ni;
       asgnstp->tgt = a0;
@@ -1281,8 +1295,6 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
     // lists
     case Arexp: // a + b + ...
-      cnt = am;
-
       if (cnt == 2) { // a + b
         lnn = a0;
         lnh = nhs[lnn];
@@ -1315,22 +1327,18 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
         rexpp->pos = repos;
         precexp(ap,rexpp,repool + repos,args,cnt);
         repos += cnt * 2;
-        ainc = cnt;
       }
     break;
 
-    case Aprmlst: cnt = am;
-                  prmlp = prmls + ni;
-                  prmlp->pos = repos;
-                  prmlp->cnt = cnt;
-                  memcpy(repool + repos,args,cnt * 4);
-                  repos += cnt;
-                  ainc = cnt;
+    case Aprmlst:
+      prmlp = prmls + ni;
+      prmlp->pos = repos;
+      prmlp->cnt = cnt;
+      memcpy(repool + repos,args,cnt * 4);
+      repos += cnt;
     break;
 
     case Astmtlst:
-      cnt = am;
-      if (cnt == 0) ice(0,0,"node %u empty stmt list",gi);
       stmtlp = stmtls + ni;
       stmtlp->cnt = cnt;
       stmtlp->pos = repos;
@@ -1343,8 +1351,10 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
       }
       memcpy(repool + repos,args,cnt * 4);
       repos += cnt;
-      ainc = cnt;
       if (cnt > histlstsiz) histlstsiz = cnt;
+    break;
+
+    case Afstrlst:
     break;
 
     case Acount: goto end; // eof
@@ -1495,6 +1505,10 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
     break;
 
+    case Afstr:
+    case Afstring:
+    break;
+
     // statements
     case Aasgnst: // a[i] = 3
       asgnstp = asgnsts + ni;
@@ -1543,6 +1557,9 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
       pos = stmtlp->pos;
 
       break;
+
+    case Afstrlst:
+    break;
 
     case Acount: goto emitend;
     } // switch (typ)

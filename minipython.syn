@@ -39,8 +39,15 @@ stmt
 block
   { stmts } `blk
 
+fstr
+  *expr ?( : Slit ?) +Flit `fstr
+
 expr
-  Id `exp
+  Id `atom-id
+  Nlit `atom-nlit
+  Slit `atom-slit
+  Flit fstr Slit `fstring
+  ( expr? ) `grpexp
 
 ##
 

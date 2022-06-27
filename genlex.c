@@ -56,6 +56,7 @@ tok   . suffix for hr
 */
 
 #define Lang_dun
+#define Lang_stresc
 
 static const bool disabled[128] = {
 #ifdef Lang_stresc
@@ -87,7 +88,7 @@ enum Packed8 Ctl { Cc_c,Cc_t,Cc_u,Cc_q,Cc_r,Cc_x,Cc_e,Cc_z,Cc_a};
 
 #define Cclen 4
 
-#define Patcnt 196
+#define Patcnt 250
 
 static ub4 msgfile = Shsrc_genlex;
 #include "msg.h"
@@ -197,6 +198,7 @@ static ub1 setnams[Nset * Snam];
 struct trans {
   char pat[Patlen];
   ub1 patlen;
+  ub1 patno;
   ub1 st0,st;
   ub1 tk,tkhid;
   ub1 act;
@@ -208,7 +210,6 @@ struct trans {
   bool hrtok;
   bool nowhile;
   bool iserr;
-  ub1 errcod;
   bool tswitch;
   bool eof;
   bool cycle;
@@ -223,7 +224,7 @@ struct trans {
   ub2 cmtlen;
 };
 
-#define Translen 196
+#define Translen 240
 static struct trans transtab[Translen];
 static ub2 transtablen;
 
@@ -660,7 +661,7 @@ static ub2 addotmask(ub2 tti,ub2 *p)
 static ub2 addsetmask(ub2 tti,ub2 *p,ub2 set)
 {
   ub2 c;
-  ub2 hiti=tti,ti = tti;
+  ub2 hiti=tti,ti;
   bool b,ism = setmuls[set];
   bool new = 0;
   ub2 bit = setbits[set];
@@ -693,7 +694,7 @@ static ub2 addmasks(ub2 tti,ub1 *sp,enum Ctl *cp,ub1 len)
       case Cc_u: ti = addsetmask(tti,p,s); if (ti != hi16) hiti = ti; break;
       case Cc_q: return hi16;
       case Cc_r: return hi16;
-      case Cc_x: ti = addotmask(tti,p); if (ti != hi16) hiti = ti; break;
+      case Cc_x: return hi16;
       case Cc_e: return hi16;
       case Cc_z: ti = p[0]; if (ti != hi16) hiti = ti; else p[0] = tti; break;
       case Cc_a: ti = p[s]; if (ti == hi16) { p[s] = tti; break; }
@@ -796,16 +797,13 @@ static int mktables(void)
         }
       } else if (c == 'Q') { // compare input with current quote
         ctl = Cc_q;
-        if (st0 == 0) info("ln %u pat Q",ln);
         pi++;
       } else if (len >= 2 && c == 'o' && d == 't') { // other
         ctl = Cc_x;
-        if (st0 == 0) info("ln %u pat other",ln);
-        pi+=2;
+        pi = plen;
       } else if (len >= 2 && c == 'E' && d == 'Q') { // equal
         if (pi == 0) err(tp,st0,"EQ at start, pat %.*s",plen,p);
         ctl = Cc_e;
-        if (st0 == 0) info("ln %u pat eq",ln);
         pi+=2;
       } else if (len >= 3 && c == 'R') { // compare register against given val
         if (d == 'R') { pi += 2; sym = 'R'; }
@@ -878,7 +876,7 @@ static int mktables(void)
       tti = addmasks(ttndx,sp,cp,cclen);
       if (tti != hi16) {
         tp2 = transtab + tti;
-        err(tp,st0,"pattern shadowed by ln %u '%s'",tp2->ln,tp2->pat);
+        err(tp,st0,"pattern '%s' shadowed by ln %u '%s'",tp->pat,tp2->ln,tp2->pat);
       }
     }
 
@@ -946,7 +944,8 @@ enum Specstate { Sout,Scmt,Spcmt,
   Sact0,Sact1,Sact2,Sact20,Sact21,Sact3,
   Sset0,Sset1,Sset2,Sset3,Sset4,
   Stoken0,Stoken1,
-  Spatact0,Spatact1,Scode,Sccmt,Sstate4,Scount };
+  Spatact0,Spatact1,Scode,Sccmt,Sstate4,
+  Seof,Scount };
 
 #define Specvlen 128
 static char specversion[Specvlen];
@@ -1348,31 +1347,6 @@ static int mkhshes(void)
   return 0;
 }
 
-static char lxernams[Lxercnt * Lxernam];
-static ub2 lxe_count;
-
-static ub2 geterrcod(cchar *p,ub2 len)
-{
-  ub2 e,i;
-  char *er;
-
-  if (len >= Lxernam) len = Lxernam-1;
-
-  for (e = 0; e < lxe_count; e++) {
-    er = lxernams + e * Lxernam;
-    i = 0;
-    while (i < len && (p[i] == er[i] || (p[i] == '-' && er[i] == '_') ) ) i++;
-    if (i == len && er[i] == 0) return e;
-  }
-  er = lxernams + e * Lxernam;
-  for (i = 0; i < len; i++) {
-    if (p[i] == '-') er[i] = '_';
-    else er[i] = p[i];
-  }
-  lxe_count = e + 1;
-  return lxe_count;
-}
-
 static void addstates(ub2 ln,cchar *src,ub2 n)
 {
   ub1 c,d;
@@ -1440,7 +1414,6 @@ static int rdspec(cchar *fname)
   ub2 blt;
   ub2 dun;
   ub2 act=0;
-  ub2 errcod;
   ub2 codlen;
 
   ub1 *streach = statereach;
@@ -1449,7 +1422,7 @@ static int rdspec(cchar *fname)
   struct myfile specfile;
   struct fnaminf *fb;
 
-  ub2 lno = 1;
+  ub2 lno = 1,otherln = 0;
   ub4 lncnt;
   ub4 *lntab;
 
@@ -1475,6 +1448,7 @@ static int rdspec(cchar *fname)
   lntab = mklntab(buf,len,&lncnt);
   setsrcmfile(fb,lntab,lncnt,len);
 
+  ub2 patno=0;
   ub2 set;
   ub2 n = 0;
   ub2 cnt;
@@ -1748,6 +1722,7 @@ static int rdspec(cchar *fname)
     switch (t) {
     case Cnl: break;
 //    case Cws: break;
+    case Cnum:   actena = (c == passc); n++; break;
     case Cbtk:   actena = !disabled[c2]; n += 2; break;
     case Chsh:   xst = Scmt; xst2 = Sact0; break;
     case Cdot:   actself = 1; break;
@@ -1868,6 +1843,7 @@ static int rdspec(cchar *fname)
     tp2 = stdefs[st0];
     if (tp2) serror(idnam0,"state %s already defined at %u",stnam,tp2->ln);
     stdefs[st0] = tp;
+    svrb(n,"new state %s pat %u",stnam,(ub4)(tp - transtab));
 
     streach = statereach + st0 * Nstate;
 
@@ -1877,7 +1853,8 @@ static int rdspec(cchar *fname)
     }
 
     idnam0 = idnam1 = 0;
-
+    patno = 0;
+    otherln = 0;
     tp->st0 = st0;
     tp->tk = nltok;
     if (t == Cnl) xst = Spat0; else xst = Sstate2;
@@ -1925,12 +1902,10 @@ static int rdspec(cchar *fname)
     tp->tk = tp->tkhid = Ntok-1;
     tp->act = Nact - 1;
 
-    if (c == 0) { info("eof at state %s",stnam); goto eof; }
-
     switch (t) {
     case Cws:    xst = Spat1; break;
     case Cnum:   if (c == '1' || c == '2') {
-                   if (c != passc) { xst = Spcmt; }
+                   if (c != passc) xst = Spcmt;
                  }
                  break;
     case Cbtk:   if (disabled[c2]) xst = Spcmt; else n++; break;
@@ -1939,7 +1914,21 @@ static int rdspec(cchar *fname)
                  else { xst = Spcmt; break; }
     case Cdot:   idnam0 = n+1; idnam1 = 0; xst = Sstate1; tp->nowhile=1; break;
     case Calpha: idnam0 = n;   idnam1 = 0; xst = Sstate1; break;
-    default:     serror(n,"expected pattern, found '%s'",chprint(c));
+    default:     if (c == 0) xst = Seof; else serror(n,"expected pattern, found '%s'",chprint(c));
+    }
+
+    if (pass == 1 && patno && xst == Sstate1 && otherln == 0) {
+      tp->st0 = st0; // add 'ot Err'
+      tp->st = st0;
+      tp->ln = lno;
+      tp->patno = patno++;
+      info("other pat %u ln %u '%.6s'",tp->patno,lno,buf+n);
+      strcpy(tp->pat,"ot");
+      tp->patlen = 2;
+      tp->iserr = 1;
+      tp++;
+      tp->tk = tp->tkhid = Ntok-1;
+      tp->act = Nact - 1;
     }
   break;
 
@@ -1985,22 +1974,27 @@ static int rdspec(cchar *fname)
     case Cnl: idnam1 = n; break;
     default: break;
     }
-    if (idnam1) {
-      tp->st0 = st0;
-      tp->st = st0;
-      tp->ln = lno;
-      idlen = idnam1 - idnam0;
-      if (idlen + 1 >= Patlen) serror(n,"state %s: pattern exceeds len %u",stnam,Patlen);
+    if (idnam1 == 0) break;
 
-      memcpy(tp->pat,buf+idnam0,idlen);
-      tp->patlen = idlen;
-      tp->pat[idlen] = 0;
-      idnam0 = idnam1 = 0;
-      if (t == Cnl) {
-        xst = Spat0;
-        tp++;
-      } else xst = Snxstate0;
+    tp->st0 = st0;
+    tp->st = st0;
+    tp->ln = lno;
+    tp->patno = patno++;
+    idlen = idnam1 - idnam0;
+    if (idlen + 1 >= Patlen) serror(n,"state %s: pattern exceeds len %u",stnam,Patlen);
+
+    memcpy(tp->pat,buf+idnam0,idlen);
+    tp->patlen = idlen;
+    tp->pat[idlen] = 0;
+    if (strcmp(tp->pat,"ot") == 0) {
+      if (otherln) serror(n,"duplicate other, first at ln %u",otherln);
+      otherln = lno;
     }
+    idnam0 = idnam1 = 0;
+    if (t == Cnl) {
+      xst = Spat0;
+      tp++;
+    } else xst = Snxstate0;
   break;
 
   case Snxstate0:
@@ -2026,16 +2020,7 @@ static int rdspec(cchar *fname)
       idnam1 = n;
       idlen = idnam1 - idnam0;
       if (idlen + 1 >= Stnam) serror(n,"state %s: name exceeds len %u",stnam,Stnam);
-      tp->errcod = 0xff;
-      if (idlen >= 3 && memeq(buf+idnam0,"Err",3)) {
-        tp->iserr = 1;
-        if (idlen > 4 && buf[idnam0+3] == '-') {
-          idnam0 += 4; idlen -= 4;
-          errcod = geterrcod(buf+idnam0,idlen);
-          tp->errcod = errcod;
-        } else tp->errcod = 0xff;
-        break;
-      } else if (idlen == 3 && memeq(buf+idnam0,"EOF",3)) {
+      if (idlen == 3 && memeq(buf+idnam0,"EOF",3)) {
         tp->eof = 1;
         break;
       }
@@ -2119,9 +2104,7 @@ static int rdspec(cchar *fname)
   case Spatact0:
     switch (t) {
     case Cws:    break;
-    case Cnum:   if (c == '1' || c == '2') {
-                   if (c != passc) { skipact = 1; }
-                 }
+    case Cnum:   if (c != passc) skipact = 1;
                  break;
     case Calpha: idnam0 = n; idnam1 = 0; xst = Spatact1; break;
     case Cbs:    if (c2 == '\n') { n++; } break;
@@ -2186,11 +2169,14 @@ static int rdspec(cchar *fname)
     if (skipact == 0) {
       if (codlen) tp->code[codlen++] = ' ';
       for (i = 0; i < slen; i++) {
-        if (buf[actval0+i] == '#') {
-          if (slen > 1 && buf[actval0+i+1] == '#') i++;
+        c = buf[actval0+i];
+        if (c == '#') {
+          if (slen > 1 && buf[actval0+i+1] == '#') { i++; tp->code[codlen++] = c; }
           else break;
-        }
-        tp->code[codlen++] = buf[actval0+i];
+        } else if (c == '$' && buf[actval0+i+1] == 'L') {
+          i++;
+          codlen += mysnprintf(tp->code,codlen,Codlen,"%u",lno);
+        } else tp->code[codlen++] = c;
       }
       tp->codlen = codlen;
     } else skipact = 0;
@@ -2204,7 +2190,7 @@ static int rdspec(cchar *fname)
   case Spcmt:
     if (t == Cnl) {
       xst = Spat0;
-    } else if (c == 0) goto eof;
+    } else if (c == 0) xst = Seof;
   break;
 
   case Sccmt:
@@ -2215,7 +2201,19 @@ static int rdspec(cchar *fname)
     } else if (t == Cnl) {
       tp++;
       xst = Spat0;
-    } else if (c == 0) goto eof;
+    } else if (c == 0) serror(n,"unexpected eof in state %s",stnam);
+  break;
+
+  case Seof:
+    if (otherln == 0) break;
+    tp->st0 = st0; // add 'ot Err'
+    tp->st = st0;
+    tp->ln = lno;
+    tp->patno = patno++;
+    strcpy(tp->pat,"ot");
+    tp->patlen = 2;
+    tp->iserr = 1;
+    tp++;
   break;
 
   } // switch state
@@ -2295,7 +2293,7 @@ static int rdspec(cchar *fname)
     } while (change);
 
     for (st = 0; st < nstate; st++) {
-      if (stcover[st] == 0) err(nil,st,"state unreachable from %.*s",stlens[st00],states[st00]);
+      if (stcover[st] == 0) swarn(stlnos[st]|Lno,"state %-8.*s unreachable from %.*s ln %u",stlens[st],states[st],stlens[st00],states[st00],stlnos[st00]);
     }
 //    if (msgerrcnt()) return 1;
   }
@@ -2984,17 +2982,6 @@ static int wrfile(void)
     } else myfprintf(&lhfp,"#define lookupdun2(c,d) D99_count\n\n");
 #endif
 
-    // error codes
-    if (lxe_count) myfprintf(&lhfp,"#define Lxercnt %u\n",lxe_count);
-    myfprintf(&lhfp,"enum Lxerror {\n  ");
-    bpos = 0;
-    for (ec = 0; ec < lxe_count; ec++) {
-      nam = lxernams + ec * Lxernam;
-      bpos += mysnprintf(buf,bpos,blen,"Lxe_%*s = %2u,%s",-8,nam,ec,(ec & 7) == 7 ? "\n  " : " ");
-    }
-    mysnprintf(buf,bpos,blen,"Lxe_%*s = %2u,%s",-8,"count",ec,(ec & 7) == 7 ? "\n  " : " ");
-    myfprintf(&lhfp,"%s};\n\n",buf);
-
     // state names
     spos = 0;
     if (printstates) {
@@ -3113,7 +3100,7 @@ static int wrfile(void)
       if (tp->st0 != st0) break;
     }
 
-    vrb("st %u tt %u %u",st0,ttndx,ttend);
+    // vrb("st %u tt %u %u",st0,ttndx,ttend);
     if (ttend - ttndx < 2) sinfo(lno|Lno,"state %s has only one pattern",st0nam);
 
     ccnt = tcnt = ucnt = ocnt = loopc1 = 0;
@@ -3123,7 +3110,7 @@ static int wrfile(void)
 
     ctl = 0;
     memset(looptab,0,256);
-    memset(ctltab,0,512);
+    memset(ctltab,0,sizeof(ctltab));
     for (ttndx2 = ttndx; ttndx2 < ttend; ttndx2++) {
       tp = transtab + ttndx2;
       st = tp->st;
@@ -3153,13 +3140,13 @@ static int wrfile(void)
       break;
 
       case Cc_u: ucnt++; break;
-      case Cc_x: ocnt++; if (ttndx2 != ttend-1) err(tp,st,"state %u: other needs to be last",st0);
+      case Cc_x: if (ttndx2 != ttend-1) err(tp,st,"pat %u: other needs to be last",transtab[ttndx2].patno);
                  if (dobt) dotswitch = 0;
       break;
       case Cc_e: if (prvctl == Cc_c) ccnt++; break;
       }
     }
-    totcnt = ccnt + tcnt + ucnt + ocnt;
+    totcnt = ccnt + tcnt + ucnt;
     if (totcnt < 2) sinfo(0,"one pattern for %u c entries",ccnt);
     if (loopc1 == 1 && looptab[loopc]) loopc1 = 0;
 
@@ -3186,7 +3173,6 @@ static int wrfile(void)
       memset(ctbl,0xff,nsets);
       memset(ttbl,0xff,nsets);
       his = 0;
-      haveany = 0;
       for (ttndx2 = ttndx; ttndx2 < ttend; ttndx2++) {
         tp = transtab + ttndx2;
         sp = tp->syms;
@@ -3197,9 +3183,8 @@ static int wrfile(void)
         ctl = cp[0];
         s = sp[0];
         if (ctl == Cc_x) {
-          if (haveany) err(tp0,st0,"duplicate other in state %s",st0nam);
-          haveany = 1;
           ttany = ttndx2;
+          info("any for %s.%s",st0nam,transtab[ttany].pat);
           continue;
         }
         if (ctl != Cc_t || len > 1 || tp->dobt) continue;
@@ -3211,27 +3196,25 @@ static int wrfile(void)
       }
 
       for (s = 0; s < nsets; s++) {
-        if (haveany && ctbl[s] == 0xff) ttbl[s] = ttany;
+        if (ctbl[s] == 0xff) ttbl[s] = ttany;
       }
       bpos += mysnprintf(buf,bpos,blen,"\nstatic void *compgo%c_%s[%u] = {\n  ",passc,st0nam,nsets+1);
 
       tkpos = tkgpos = 0;
       for (t = 0; t < nsets; t++) {
         isany = (ctbl[t] == 0xff);
-        if (ttbl[t] == 0xff) tp = nil;
-        else {
-          tp = transtab + ttbl[t];
-          st = tp->st;
-          tk = tp->tk;
-          lno = tp->ln;
-        }
+        if (ttbl[t] == 0xff) continue;
+        tp = transtab + ttbl[t];
+        st = tp->st;
+        tk = tp->tk;
+        lno = tp->ln;
+
         mysnprintf(ctuval,0,Ctulen,"\t// t=%s%cln %u",setnams + t * Snam,ena_lno,lno);
 
-        if (isany && !haveany) {
-          bpos += mysnprintf(buf,bpos,blen,"&&lx_error%c,%s implied ot ",passc,ctuval);
-        } else if (tp->iserr) {
+        if (tp->iserr) {
           tp->tswitch = 1;
-          bpos += mysnprintf(buf,bpos,blen,"&&lx_error_%u_%c,%s marked ",tp->ln,passc,ctuval);
+          info("err for %s.%s",st0nam,tp->pat);
+          bpos += mysnprintf(buf,bpos,blen,"&&lxer_%s_%u_%c,%s ",st0nam,tp->patno,passc,ctuval);
         } else {
           tp->tswitch = 1;
           if (tp->eof) bpos += mysnprintf(buf,bpos,blen,"&&lx%c_eof",passc);
@@ -3252,12 +3235,14 @@ static int wrfile(void)
         bpos += mysnprintf(buf,bpos,blen,"\n  ");
       } // each t
 
-      if (haveany) {
-        tp = transtab + ttany;
+      // other for t
+      tp = transtab + ttany;
+      if (tp->iserr) mysnprintf(ctuval,0,Ctulen,"lxer_%s_%u_%c",st0nam,tp->patno,passc);
+      else {
         st = tp->st;
         mysnprintf(ctuval,0,Ctulen,"lx%c_%.*s",passc,stlens[st],states[st]);
-      } else mysnprintf(ctuval,0,Ctulen,"lx_error%c",passc);
-      myfprintf(&lfp,"%.*s\n  &&%s};\n\n",bpos,buf,ctuval);
+      }
+      myfprintf(&lfp,"%.*s\n  &&%s};\t// ln %u\n\n",bpos,buf,ctuval,tp->ln);
 
       for (t = 0; t <= hitktab; t++) {
         if (tkpos) {
@@ -3309,7 +3294,7 @@ static int wrfile(void)
     bpos = 0;
 
     if (loopc1 == 1) bpos += mysnprintf(buf,bpos,blen,"while (sp[n] == '%s') n++; // %u \n  ",chprint(loopc),loopc);
-    if (totcnt > 1) {
+    if (totcnt) {
       bpos += mysnprintf(buf,bpos,blen,"c = sp[n%s];",minlen ? "++" : "");
       if (ena_lno) bpos += mysnprintf(buf,bpos,blen," // ln %u",lno);
       buf[bpos++] = '\n';
@@ -3365,7 +3350,7 @@ static int wrfile(void)
                  else mysnprintf(ctuval,0,Ctulen," (utab[c] & %s) ",snam);
                  haveuvar=1;
                  break;
-      case Cc_x: isany = 1; haveany = 1; break;
+      case Cc_x: isany = 1; break;
       case Cc_e: break;
       }
 
@@ -3446,7 +3431,7 @@ static int wrfile(void)
 
         // goto part
         nst = states[st];
-        if (tp->iserr) bpos += mysnprintf(buf,bpos,blen,"goto lx_error_%u_%c;",lno,passc);
+        if (tp->iserr) bpos += mysnprintf(buf,bpos,blen,"goto lxer_%s_%u_%c;",st0nam,tp->patno,passc);
 
         else if (tp->actstate == 0) {
           bpos += mysnprintf(buf,bpos,blen,"goto lx%c_%.*s",passc,stlens[st],nst);
@@ -3463,9 +3448,6 @@ static int wrfile(void)
     } // each pat for if-else
 
     if (dotswitch == 0 ) {
-      if (!haveany) {
-        bpos += mysnprintf(buf,bpos,blen,"else goto lx_error%c; // implied other",passc);
-      }
       myfprintf(&lfp,"  %.*s\n",bpos,buf);
       continue;
     }
@@ -3524,8 +3506,6 @@ static int wrfile(void)
       if (pass2) {
         bpos += mysnprintf(buf,bpos,blen,"tks[dn] = tktab%c_%s[t]; fpos[dn] = n; ",passc,st0nam);
         if (tkhigrp && logrp == 0) bpos += mysnprintf(buf,bpos,blen,"tkgrps[tkgtab%c_%s[t]]++; ",passc,st0nam);
-      }
-      if (pass2) {
         if (addtrace) bpos += mysnprintf(buf,bpos,blen,"tracetk2(%u,tktab%c_%s[t]);\n",lno,passc,st0nam);
       }
       bpos += mysnprintf(buf,bpos,blen,"\n  dn++; goto lx%c_%s%s;\n",passc,st0nam,pass1 && addtrace ? "_1" : "");
@@ -3538,11 +3518,9 @@ static int wrfile(void)
 
   for (ttndx = 0; ttndx < ttend; ttndx++) {
     tp = transtab + ttndx;
-    if (tp->iserr == 0) continue;
-    myfprintf(&lfp,"lx_error_%u_%c: lxerror(l,n-nlcol,%u,c,%u);\n",tp->ln,passc,tp->ln,tp->errcod == 0xff ? lxe_count : tp->errcod);
+    st0 = tp->st0;
+    if (tp->iserr) myfprintf(&lfp,"lxer_%.*s_%u_%c: lxerror(l,n-nlcol,%u,c,nil);\n",stlens[st0],states[st0],tp->patno,passc,tp->ln);
   }
-
-  myfprintf(&lfp,"\nlx_error%c: lxerror(l,n-nlcol,0,c,Lxe_count);\n\n",passc);
 
   myfprintf(&lfp,"\nlx%c_eof:\n\n",passc);
 
