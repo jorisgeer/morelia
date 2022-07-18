@@ -22,24 +22,25 @@
 #define Tkgrps 8
 
 struct lexsyn {
-  ub4 tkcnt,tbcnt;
+  ub4 tkcnt,tbcnt,cmtcnt;
   const ub1 *toks; // enum Token tok.h
   const ub2 *atrs;
   const ub8 *bits;
   const ub4 *fpos;
+  const ub4 *cmts;
 
   void *tkbas;
 
   ub1 *idnampool;
 
-  cchar *src;
+  cchar *orgsrc; // as allocated for read
+  cchar *src;    // moved for bom / shebang
   ub4 srclen;
 
   const ub1 *slitpool;
   ub4 slitcnt,slittop;
 
-  cchar *nlitpool;
-  ub4 nlitcnt,nlittop;
+  ub4 nlitcnt;
 
   ub2 hidepth;
   ub4 idcnt,uidcnt;
@@ -53,7 +54,7 @@ struct lexsyn {
   const ub1 **incdirs;
 };
 
-#define Idlen 32
+#define Idlen 96
 
 #define Tkpad 10
 
@@ -86,10 +87,15 @@ struct lexsyn {
 #define La_flita  0x8000
 
 //      La_slit1 0
-#define La_slit2 0x1000
-#define La_slit4 0x2000
-#define La_slits 0x3000
-#define La_slit  0x4000
+#define La_slit0 0x2000
+#define La_slit2 0x4000
+#define La_slit3 0x6000
+#define La_slits 0x8000
+#define La_slit  0xa000
+
+#define Lxabit 26
+#define Lxamsk 0x3ffffff
+#define Lx_sign 0x80000000
 
 enum Inctype { Inone,Isys,Iuser };
 

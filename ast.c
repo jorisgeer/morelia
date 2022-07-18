@@ -413,11 +413,9 @@ static ub4 *process(struct ast *ap,bool emit)
     break;
 
     case Ailit:
-    case Ailitn:
     break;
 
     case Ailits:
-    case Ailitns:
     break;
 
     case Aflit:
@@ -919,7 +917,8 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   const enum Token * restrict tks = lsp->toks;
   const ub2 * restrict atrs   = lsp->atrs;
   const ub4 * restrict fpos   = lsp->fpos;
-  ub4 fps=0;
+  ub4 fps=0,fpx;
+  ub1 xat=0;
   ub4 ti;
 
   ub4 nvar,nuex,nbex;
@@ -937,13 +936,13 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
   ub4 rni = 0;
   ub4 gi,lnn,rnn;
-  ub4 nh,a0h,a1h,lnh,rnh;
+  ub4 nh,a0h=0,a1h,lnh,rnh;
   ub4 li,ri;
-  enum Astyp t,t0,lt,rt;
+  enum Astyp t,t0,lt,rt,at;
   enum Bop bop;
   enum Uop uop;
 
-  ub4 cnt,cnt2=0,len;
+  ub4 cnt=0,cnt2=0,len;
 
   ub4 fxs;
   int fxp;
@@ -970,7 +969,6 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   showcnt("uid",uidcnt);
 
   ub4 nilit = ndcnts[Ailit];
-  ub4 nilitn = ndcnts[Ailitn];
   ub4 nflit = ndcnts[Aflit];
 
   ub4 nuexp = ndcnts[Auexp];
@@ -1023,7 +1021,6 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   ndpart[Avar].siz = sizeof(struct var);
 
   ndpart[Ailit].siz = sizeof(struct ilit);
-  ndpart[Ailitn].siz = sizeof(struct ilit);
   ndpart[Aflit].siz = sizeof(struct flit);
 
   ndpart[Auexp].siz = sizeof(struct uexp);
@@ -1046,13 +1043,14 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
   ndpart[Aprmlst].siz = sizeof(struct prmlst);
   ndpart[Astmtlst].siz = sizeof(struct stmtlst);
 
+  for (t = 0; t < Acount; t++) ndpart[t].fil = Mnofil;
+
   void *ndbas = allocset(ndpart,Acount,Mnofil,"ast tree",nextcnt);
 
   struct aid *idp,*ids = ndpart[Aid].ptr;
   struct var *varp,*vars = ndpart[Avar].ptr;
 
   struct ilit *ilitp,*ilits = ndpart[Ailit].ptr;
-  struct ilit *ilitnp,*ilitns = ndpart[Ailit].ptr;
   struct flit *flitp,*flits = ndpart[Aflit].ptr;
   struct slit *slitp,*slits = ndpart[Aslit].ptr;
 
@@ -1079,7 +1077,7 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
   ub4 *rep,*repool = alloc(repcnt,ub4,Mnofil | Mo_ok0,"ast rep",nextcnt);
 
-  ub4 *idfpos = alloc(nid,ub4,Mnofil | Mo_ok0,"ast id",nextcnt);
+  // ub4 *idfpos = alloc(nid,ub4,Mnofil | Mo_ok0,"ast id",nextcnt);
 
   memcpy(ap->ndcnts,ndcnts,sizeof ap->ndcnts);
 
@@ -1145,7 +1143,9 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
       val = vals[vi++];
       ainc = 0;
       ti = tis[gi];
-      fps = fpos[ti];
+      atr = atrs[ti];
+      fpx = fpos[ti];
+      fps = fpx & Lxamsk; xat = fpx >> Lxabit;
     } else if (t < Arexp) {
       ac = 0;
       a0 = args[napos] & hi56;
@@ -1164,7 +1164,7 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
       idp = ids + ni;
       info("id %u",ni);
       idp->id = val & hi32;
-      idfpos[ni] = fps;
+//      idfpos[ni] = fps;
       break;
 
     case Avar: break;
@@ -1172,11 +1172,7 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     case Ailit:
       ilitp = ilits + ni;
       ilitp->val = val;
-    break;
-
-    case Ailitn:
-      ilitnp = ilitns + ni;
-      ilitnp->val = val;
+      ilitp->atr = xat;
     break;
 
     case Aflit:
@@ -1195,7 +1191,6 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
 
     case Aslit:
     case Ailits:
-    case Ailitns: break;
 
     case Atru:
     case Afal:
@@ -1218,9 +1213,14 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     break;
 
     case Auexp:
-      uexpp = uexps + ni;
-      uexpp->e = a0;
-      uexpp->op = lx2uop(a1);
+      uop = lx2uop(a1);
+      at = a0h >> Atybit;
+      if ( (at == Ailits || at == Ailit || at == Aflit) && uop <= Oumin) { nhs[gi] = a0h; } // a = -5
+      else {
+        uexpp = uexps + ni;
+        uexpp->e = a0;
+        uexpp->op = lx2uop(a1);
+      }
     break;
 
     case Abexp: break;
@@ -1293,6 +1293,9 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     case Astmt:
     break;
 
+    // Actlxfer
+    // tk = atr;
+
     // lists
     case Arexp: // a + b + ...
       if (cnt == 2) { // a + b
@@ -1313,7 +1316,7 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
           ival1 = ilits[li].val;
           ival2 = ilits[ri].val;
           ilits[li].val = beval(ival1,bop,ival2);
-          nhs[gi] = lnn;
+          nhs[gi] = lnh;
         } else { // a + b
           bexpp = bexps + nbexp; // new bexp node
           bexpp->l = pexpp->e;
@@ -1346,7 +1349,7 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
         a0h = nhs[a0];
         t0 = a0h >> Atybit;
         ni0 = a0h & Atymsk;
-        nhs[gi] = a0;
+        nhs[gi] = a0h;
         break;
       }
       memcpy(repool + repos,args,cnt * 4);
@@ -1432,13 +1435,11 @@ void *mkast(struct synast *sa,struct lexsyn *lsp)
     break;
 
     case Ailit:
-    case Ailitn:
       ilitp = ilits + ni;
       pos += mysnprintf(buf,pos,blen,"%lu",ilitp->val);
     break;
 
     case Ailits:
-    case Ailitns:
       info("ilits %u",ni);
     break;
 

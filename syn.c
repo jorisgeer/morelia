@@ -190,7 +190,7 @@ static void ser(ub4 shfln,
   enum Ctl z,repc;
   const enum Ctl *cp;
   enum Satrs satr=Sa_none;
-  ub4 fps;
+  ub4 fps,xat;
   ub2 atr;
   ub1 ns;
   ub2 se;
@@ -223,6 +223,8 @@ static void ser(ub4 shfln,
 
   atr = atrs[ti];
   fps = fpos[ti];
+  xat = fps >> Lxabit; fps &= Lxamsk;
+  svrb(fps,"xat %x",xat);
   pos = mysnprintf(buf,0,len,"ti %u %s: expected: %s",ti,msg,xpmsg);
 
   printfirst(r);
@@ -332,7 +334,7 @@ static void __attribute__ ((format (printf,10,11))) sdiafln(
   enum Token tk = tks[ti];
   ub2 lat,atr   = atrs[ti];
 
-  ub4 fps = 0;
+  ub4 fps,xat;
   ub4 len = 512;
   char buf[512];
   ub2 lno=0;
@@ -350,6 +352,7 @@ static void __attribute__ ((format (printf,10,11))) sdiafln(
   const enum Symbol *sp;
 
   fps = fpos[ti];
+  xat = fps >> Lxabit; fps &= Lxamsk;
 
   if ( (rowcnt++ & 31) == 0) infofln(hi32,"%-19s lvl %-12s se si %-12s ti tk","","prod","sym");
 
@@ -369,7 +372,7 @@ static void __attribute__ ((format (printf,10,11))) sdiafln(
   }
 
   //                          lvl  prdnam    se  si symnam   ti     tk
-  pos = mysnprintf(buf,0,len,"%2u %-14.12s`z %2u %u %-14.12s %2u %c%-8.6s %s",lvl,prdnam(ve,tk),se,si,symnam(s),ti,c,tknam(tk,0),ntnam(r));
+  pos = mysnprintf(buf,0,len,"%2u %-14.12s`z %2u %u %-14.12s %2u %c%-8.6s %s %x",lvl,prdnam(ve,tk),se,si,symnam(s),ti,c,tknam(tk,0),ntnam(r),xat);
 //  pos += mysnprintf(buf,pos,256," %02x",bits);
 
 #ifdef Emitdetail
@@ -379,7 +382,7 @@ static void __attribute__ ((format (printf,10,11))) sdiafln(
     switch ((ub1)tk) {
     case Tid:   if (lat == La_id4) pos += mysnprintf(buf,pos,len,"%lu",bits);
                 break;
-    case Tnlit: if (lat >= La_ilita) pos += mysnprintf(buf,pos,len,"%.7s",lsp->nlitpool + bits);
+    case Tnlit: if (lat >= La_ilita) pos += mysnprintf(buf,pos,len,"%.7s",lsp->src + bits);
                 else if (lat >= La_ilit4) pos += mysnprintf(buf,pos,len,"%lu",bits);
                 else pos += mysnprintf(buf,pos,len,"%u",atr);
                 break;
@@ -435,7 +438,7 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   ub4 bcnt = lsp->tbcnt;
   ub1 grp;
 
-  if (tcnt == 0) ice(0,0,"%s empty token list","srcnam");
+  if (tcnt == 0) ice(0,0,"empty token list for %u bytes",lsp->srclen);
 
   ub4 ti = 1; // token index
   ub4 bi = 0;
@@ -466,7 +469,7 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   ub4 repfnids[Depth];
   ub4 replnids[Depth];
 
-  ub4 ntfps=0,fps=0;
+  ub4 ntfps=0,fps=0,fpx,xat;
   ub8 bits = 0;
   ub4 bits4;
   ub4 idid;
@@ -481,7 +484,7 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   ub1 match=0;
 
   enum Token tk=0,tk1;
-  ub2 atr,lat;
+  ub2 atr,lat,slen;
   const enum Symbol *sp=nil;
   enum Symbol s=0;
   enum Ctl z,repc,repcc,argc;
@@ -492,6 +495,7 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   enum Bop bop;
   ub1 ai;
   ub4 x4;
+  ub8 x8;
   const enum Ctl *cp=nil;
 
 #ifdef Lacnt
@@ -559,22 +563,21 @@ int syn(struct lexsyn *lsp,struct synast *sa)
   enum Astyp aty=0;
 
   memset(sis,0xff,Depth); // mark max depth
-  lvl = 0;
 
   info("parsing %u`  tokens",tcnt);
   si = 0;
 
   ve = startve;
 
-  repcnts[lvl] = 0;
-  sis[lvl] = 0;
-  ves[lvl] = ve;
-  ams[lvl] = 0;
-  lvl++;
+  repcnts[0] = 0;
+  sis[0] = 0;
+  ves[0] = ve;
+  ams[0] = 0;
+  lvl = 1;
 
   am = 0;
-  argp = args + lvl * Nodarg;
-  valp = vals + lvl * Nodarg;
+  argp = args + Nodarg;
+  valp = vals + Nodarg;
 
 // -------------------
 rulstart:
@@ -623,9 +626,10 @@ nxtsym:
     if (++itercnt > iterlim) ice(0,fps,"iter lim %u",iterlim);
 
     tk = tks[ti];
-    fps = fpos[ti];
+    fpx = fpos[ti];
+    xat = fps & ~ Lxamsk; fps = fpx & Lxamsk;
 
-    sinfo(fps,"tk %u/%u %s",ti,tcnt,tknam(tk,0));
+    sinfo(fps,"tk %u/%u %s %x",ti,tcnt,tknam(tk,0),xat);
     // vrb("tk %u.%s ti %u si %u/%u",tk,tknam(tk,0),ti,si,len);
 
     s = sp[si];
@@ -690,8 +694,7 @@ nxtsym:
         r = nxr;
         si = 0;
 
-        argp = args + lvl * Nodarg;
-        valp = vals + lvl * Nodarg;
+        argp += Nodarg; valp += Nodarg;
         am = 0;
 
         goto rulstart;
@@ -705,29 +708,30 @@ nxtsym:
         switch (tk) {
 
           case Tid:
-            if (lat == 0) idid = atr + uid1cnt + uid2cnt;
-            else if (lat == La_id1) idid = atr;
-            else if (lat == La_id2) idid = atr + uid1cnt;
-            else if (lat == La_id4) {
-              idid = tkbits[bi++];
-#ifdef Bltcnt
-            } else if (lat == La_idblt) {
+            if (lat == La_idblt) {
               switch (atr) {
-              case BTrue:  aty = Atru; break;
-              case BFalse: aty = Afal; break;
+//              case BTrue:  aty = Atru; break;
+//              case BFalse: aty = Afal; break;
               default:     aty = Aid;
               }
               if (aty != Aid) {
                 ndti = 0;
                 break;
               }
-#endif
+              idid = atr;
             } else if (lat == La_iddun) {
-              idid = atr + 0;
-            } else idid = 0;
+              idid = atr + B99_count;
+            } else {
+              if (lat == 0) idid = atr + uid1cnt + uid2cnt;
+              else if (lat == La_id1) idid = atr;
+              else if (lat == La_id2) idid = atr + uid1cnt;
+              else if (lat == La_id4) idid = tkbits[bi++];
+              else ice(0,fps,"invaloid Id atr %x",lat);
+              idid += B99_count + D99_count;
+            }
             aty = Aid;
             ndti = ndcnts[aty]++;
-            valp[argc] = idid | ((ub8)fpos << 32);
+            valp[argc] = idid;
             break;
 
           case Tnlit:
@@ -743,7 +747,7 @@ nxtsym:
             case La_flita: ice(0,0,"ascii lits %u todo",atr);
             default: break;
             }
-            if (aty != Ailits && aty != Ailitns) {
+            if (aty != Ailits) {
               ndti = ndcnts[aty]++;
               valp[argc] = bits;
             }
@@ -752,12 +756,15 @@ nxtsym:
           case Tslit:
           case Tflit:
             switch (lat) {
-            case 0:
-            case La_slit: bits = tkbits[bi++];
+            case 0:  bits = atr | Sa_slit1; break; // 1 char
+            case La_slit0: bits = Sa_slit0; break; // empty
+            case La_slit2: bits = tkbits[bi++] | Sa_slit2; break;
+            case La_slit3: bits = tkbits[bi++] | Sa_slit3; break;
+            case La_slits: bits = atr; break; // short id
+            case La_slit:  bits = tkbits[bi++]; break; // id
             }
-
             aty = Aslit; ndti = ndcnts[aty]++;
-            valp[argc] = bits | ((ub8)fpos << 32);
+            valp[argc] = bits;
             break;
 
           default:
@@ -769,6 +776,7 @@ nxtsym:
         nhtab[aid] = ndti | (aty << Atybit);
         ndtis[aid] = ti;
         argp[argc] = aid++;
+
         am |= (1 << argc);
         info("arg %u %x t %u ve %u si %u",argc,argp[argc],aty,ve,si);
 
@@ -820,29 +828,30 @@ nxtsym:
         switch (tk) {
 
           case Tid:
-            if (lat == 0) idid = atr + uid1cnt + uid2cnt;
-            else if (lat == La_id1) idid = atr;
-            else if (lat == La_id2) idid = atr + uid1cnt;
-            else if (lat == La_id4) {
-              idid = tkbits[bi++];
-#ifdef Bltcnt
-            } else if (lat == La_idblt) {
+            if (lat == La_idblt) {
               switch (atr) {
-              case BTrue:  aty = Atru; break;
-              case BFalse: aty = Afal; break;
+//              case BTrue:  aty = Atru; break;
+//              case BFalse: aty = Afal; break;
               default:     aty = Aid;
               }
               if (aty != Aid) {
                 ndti = 0;
                 break;
               }
-#endif
+              idid = atr;
             } else if (lat == La_iddun) {
-              idid = atr + 0;
-            } else idid = 0;
+              idid = atr + B99_count;
+            } else {
+              if (lat == 0) idid = atr + uid1cnt + uid2cnt;
+              else if (lat == La_id1) idid = atr;
+              else if (lat == La_id2) idid = atr + uid1cnt;
+              else if (lat == La_id4) idid = tkbits[bi++];
+              else ice(0,fps,"invaloid Id atr %x",lat);
+              idid += B99_count + D99_count;
+            }
             aty = Aid;
             ndti = ndcnts[aty]++;
-            valp[argc] = idid | ((ub8)fpos << 32);
+            valp[argc] = idid;
             break;
 
           case Tnlit:
@@ -858,7 +867,7 @@ nxtsym:
             case La_flita: ice(0,0,"ascii lits %u todo",atr);
             default: break;
             }
-            if (aty != Ailits && aty != Ailitns) {
+            if (aty != Ailits) {
               ndti = ndcnts[aty]++;
               valp[argc] = bits;
             }
@@ -867,12 +876,15 @@ nxtsym:
           case Tslit:
           case Tflit:
             switch (lat) {
-            case 0:
-            case La_slit: bits = tkbits[bi++];
+            case 0: break;
+            case La_slit:
+              len = atr;
+              if (len) bits = tkbits[bi++];
+              break;
             }
 
             aty = Aslit; ndti = ndcnts[aty]++;
-            valp[argc] = bits | ((ub8)fpos << 32);
+            valp[argc] = bits;
             break;
 
           case Top: argp[argc] = atr; am |= (1 << argc);
@@ -959,8 +971,8 @@ endsym:
       if ( (am & bit) == 0) continue;
 
     // arg
-      nn = argp[ac];
-      ndargs[napos++] = nn | ((ub4)argc << 30) | (ni << 16);
+      x8 = argp[ac];
+      ndargs[napos++] = x8 | ((ub4)argc << 30) | (ni << 16);
       argc++;
     }
 
@@ -978,7 +990,7 @@ endsym:
 #if 0
     np->blklvl = curscope;
     if (ve == P0block) {
-      if (curscope) curscope--; else ice(hi32,fpos,"scope below zero at %s",tknam(tk,0));
+      if (curscope) curscope--; else ice(hi32,fps,"scope below zero at %s",tknam(tk,0));
     }
 #endif
 
@@ -999,7 +1011,7 @@ endsym:
     repcnt = repcnts[lvl];
     vrbo("repcnt %u at %u",repcnt,lvl);
     if (am) {
-//      if (repcnt >= Repcnt) serror(fpos,"exceeding %u repeat count",repcnt);
+//      if (repcnt >= Repcnt) serror(fps,"exceeding %u repeat count",repcnt);
       if (repcnt == 0) repfnids[lvl] = replnids[lvl] = nid;
       else {
         ni2 = replnids[lvl];
@@ -1026,7 +1038,7 @@ endsym:
           np2 = nodes + ni2;
           ve2 = np2->ve;
           info("ve %u %s`z",ve,prdnam(ve,0));
-          ndargs[napos++] = np2->ni;
+          ndargs[napos++] = np2->ni; // todo fps
           ni2 = sibs[ni2];
         }
         aty = Prd2nod[ve];
@@ -1046,7 +1058,7 @@ endsym:
 
   if (lvl == 0) {
     if (ti >= tcnt) {
-//    icefln(FLN,hi32,fpos,"pop at lvl 0 after %u` tokens and %u` nodes",ti,ni);
+//    icefln(FLN,hi32,fps,"pop at lvl 0 after %u` tokens and %u` nodes",ti,ni);
       sinfo(fps,"pop at lvl 0 after %u` tokens and %u` nodes",ti,ni);
       goto eof;
     } else icefln(FLN,hi32,fps,"pop at lvl 0 after %u/%u tokens and %u` nodes",ti,tcnt,ni);
@@ -1060,6 +1072,7 @@ endsym:
   am = ams[lvl];
   info("node %u nxve %u",ni,nxve);
   argp -= Nodarg;
+  valp -= Nodarg;
 
   ai = syntabeas[nxve];
 
@@ -1163,7 +1176,7 @@ endsym:
   info("max parser stack lvl %u",hilvl);
   if (lvl > 1) ice(hi32,fps,"syn eof at lvl %u",lvl);
 
-//  if (r != startrule) { ser(FLN,tk,bits,fpos,ti,r,si,Ser_eof_nostart,T99_count,0,0); return 1; }
+//  if (r != startrule) { ser(FLN,tk,bits,fps,ti,r,si,Ser_eof_nostart,T99_count,0,0); return 1; }
 
   if (globs.rununtil < 4) { info("until %u",globs.rununtil); return 1; }
 
@@ -1237,15 +1250,12 @@ endsym:
       pos += mysnprintf(buf,pos,blen," ilit %lu %u",val,ndti); break;
     break;
 
-    case Ailitn:
     case Aflit:
 
     case Aslit: // Aval
     break;
 
     case Ailits: pos += mysnprintf(buf,pos,blen," ilits %u",ndti); break;
-
-    case Ailitns: break;
 
     case Atru:
     case Afal:

@@ -72,7 +72,7 @@ static bool do_transcript = 0;
 
 struct globs globs;
 
-static ub2 msgopts = Msg_shcoord | Msg_fno | Msg_lno | Msg_col;
+static ub2 msgopts = Msg_shcoord | Msg_fno | Msg_lno | Msg_col | Msg_Lvl;
 
 #define Nnterm 64
 #define Nsym (Nnterm + T99_count)
@@ -239,8 +239,8 @@ static cchar *tknam2(enum Token tk,bool hr)
 }
 
 static bool tkdefarg(enum Token t) {
-  if (t >= T99_kwd && t <= T0grp) return 1;
-  else if (t < T99_kwd && t >= T99_mrg) return 1;
+  if (t >= T99_kwd && t <= T0grp) return 1; // lits
+  // else if (t < T99_kwd && t >= T99_mrg) return 1;
   else return 0;
 }
 
@@ -971,7 +971,7 @@ static bool doentry(struct rule *rp,struct sentry *ep,ub1 *sp,ub1 *cp,ub1 *ap,ub
       s = rul2nrul[s - T99_count] + T99_count;
     }
 //    svrb2(rp->lno|Lno,rp->id,s,"%u si %u z %x",s,si,z);
-    if (a != 0xf) { z |= (a+1); sinfo2(lnx,rp->id,s,"arg %u",a); }
+    if (a != 0xf) { z |= (a+1); svrb2(lnx,rp->id,s,"arg %u",a); }
     ds[si] = s;
     dc[si] = z;
   }
@@ -1687,7 +1687,7 @@ static bool doargs(void)
   ub1 hidep=0;
   ub1 *ruldep = minalloc(rul2,1,0,"ruldep");
 
-  info("doargs iter %u",iter++);
+  vrbo("doargs iter %u",iter++);
 
   for (r = 0; r < rulcnt; r++) { // each rule
     rp = rules + r;
@@ -1727,7 +1727,7 @@ static bool doargs(void)
       if (s >= T99_count + rulcnt) { // merged tokens
         doarg = 1;
       } else if (s < T99_count) { // regular token
-        if (tkdefarg(s)) { doarg = 1; sinfo2(lnx,r,s,"def arg for %u",s); }
+        if (tkdefarg(s)) { doarg = 1; svrb2(lnx,r,s,"def arg for %u",s); }
       } else { // nonterm
         rx = s - T99_count;
         rxp = rules + rx;
@@ -1761,7 +1761,7 @@ static bool doargs(void)
     } // each alt
     rp->argcnt = hirarg;
     if (change == 0) {
-      sinfo2(lnx,r,0xff,"hi depth %u",rp->hidep);
+      svrb2(lnx,r,0xff,"hi depth %u",rp->hidep);
       if (rp->hidep > hidep) { hidep = rp->hidep; hidepr = r; }
     }
   } // each rule
@@ -2404,7 +2404,7 @@ static int rdspec(cchar *fname,ub1 *src)
 
   if (hastidctl) infofln(FLN,"typedef / id ctl active");
 
-#if 1
+#if 0
   for (tk = 0; tk < T99_count; tk++) {
     if (tkrefs[tk] == 0) warning("token %s.%u unreferenced",tknam(tk),tk);
   }
@@ -2471,7 +2471,7 @@ static void wrla(struct bufile *fp)
     if (laid) myfputc(fp,',');
     myfprintf(fp,"%u",lasetn[laid]);
   }
-  myfprintf(fp," };\n\n");
+  myfputs(fp," };\n\n");
 
   myfprintf(fp,"#define x 255\nstatic const ub1 lasets[%u] = { ",lacnt * Laset);
   latabsizes += lacnt * Laset;
@@ -2552,7 +2552,7 @@ static void wrla(struct bufile *fp)
     }
   }
 
-  myfprintf(fp,"\n};\n\n");
+  myfputs(fp,"\n};\n\n");
 
   myfprintf(fp,"typedef ub%u lasecs_t;\n#define x %u\n",secstyp,secstyp == 1 ? 255 : hi16);
   myfprintf(fp,"static const lasecs_t lasecmap[Lacnt * T99_count] = { // %u * %u = %u\n  ",lacnt,T99_count,secstyp * lacnt * T99_count);
@@ -2564,7 +2564,7 @@ static void wrla(struct bufile *fp)
     if (x2 == hi16) myfputc(fp,'x');
     else myfprintf(fp,"%u",x2);
   }
-  myfprintf(fp,"\n};\n#undef x\n\n");
+  myfputs(fp,"\n};\n#undef x\n\n");
 
   myfprintf(fp,"#if 0\ntypedef ub%u lasec_t;\n",sectyp);
 
@@ -2576,7 +2576,7 @@ static void wrla(struct bufile *fp)
     if (laid) myfprintf(fp,"\n// laid %u\n  ",laid);
     for (tk = 0; tk < T99_count; tk++) {
       lasp = laseconds + (laid * T99_count + tk) * Laset;
-      if ( (tk & 7) == 7) myfputs(fp,"\n  ",3);
+      if ( (tk & 7) == 7) myfputs(fp,"\n  ");
       else myfputc(fp,' ');
       for (n = 0; n < Laset; n++) {
         if (laid | tk | n) myfputc(fp,',');
@@ -2586,7 +2586,7 @@ static void wrla(struct bufile *fp)
       }
     }
   }
-  myfprintf(fp,"\n};\n#endif\n");
+  myfputs(fp,"\n};\n#endif\n");
 
 }
 
@@ -2637,7 +2637,7 @@ static void wrprd(struct bufile *fp,struct bufile *dfp)
   char buf5[512];
   char buf6[512];
 
-  myfprintf(fp,"// < tablen = sentry < 1dirtok = argdir < laid = la\n\n");
+  myfputs(fp,"// < tablen = sentry < 1dirtok = argdir < laid = la\n\n");
 
   for (ve = 0; ve < vtablen; ve++) {
     comma = ve ? "," : "";
@@ -2707,7 +2707,7 @@ static void wrprd(struct bufile *fp,struct bufile *dfp)
 
   myfprintf(fp,"static const ub2 vprdmap[%u] = { %s }; // rule.se\n\n",vtablen,buf4);
 
-  myfprintf(fp,"// s0.1 rep.1 re1.1 si.2 len.4 \n");
+  myfputs(fp,"// s0.1 rep.1 re1.1 si.2 len.4 \n");
   myfprintf(fp,"static const ub1 syntabeas[%u] = {\n%.*s};\n\n",vtablen,pos3,buf3);
 
   // enum
@@ -2820,7 +2820,7 @@ static int wrfile(void)
   sfp.nam = stabname;
   sfp.dobck = 1;
 
-  myfopen(&sfp,bulen,1);
+  myfopen(FLN,&sfp,bulen,1);
 
   myfprintf(&sfp,"// %s - LL(1-2) parser tables\n\n",stabname);
 
@@ -2829,7 +2829,7 @@ static int wrfile(void)
   dfp.nam = sdefname;
   dfp.dobck = 2;
 
-  myfopen(&dfp,32 * vtablen + 4096,1);
+  myfopen(FLN,&dfp,32 * vtablen + 4096,1);
 
   myfprintf(&dfp,"// %s - parser defines\n\n",sdefname);
 
@@ -2860,7 +2860,7 @@ static int wrfile(void)
     if (nr) myfputc(&sfp,',');
     myfprintf(&sfp,"%u",sposs[nr]);
   }
-  myfprintf(&sfp," };\n\n");
+  myfputs(&sfp," };\n\n");
   poolsizes += nrulcnt * 2;
 
   myfprintf(&sfp,"static const char ntnampool[%u] = \"%.*s\";\n\n",spos,spos,spool);
@@ -2893,7 +2893,7 @@ static int wrfile(void)
     mrgbit = mrgbits[tk];
     myfprintf(&sfp,"%u",mrgbit);
   }
-  myfprintf(&sfp," };\n\n");
+  myfputs(&sfp," };\n\n");
 
   wrprd(&sfp,&dfp),
   myfclose(&dfp);
@@ -2904,7 +2904,7 @@ static int wrfile(void)
   ub4 sisiz = (ub4)sizeof(struct seinfo);
 
   if (hastidctl) {
-    myfprintf(&sfp,"\n#define Tidctl\n");
+    myfputs(&sfp,"\n#define Tidctl\n");
   }
 
   nr = rul2nrul[startrule];
@@ -2978,7 +2978,7 @@ static int wrfile(void)
       labits >>= 1; laid++;
     }
     myfprintf(&sfp,"//  %.*s",pos2,buf2);
-    myfprintf(&sfp,"\n{ { ");
+    myfputs(&sfp,"\n{ { ");
 
     for (si = 0; si < len; si++) {
       s = sp[si];
@@ -2994,7 +2994,7 @@ static int wrfile(void)
     }
     while (si < Slen) { myfprintf(&sfp,",%*u",si < maxlen ? namwid : 0,0); si++; }
 
-    myfprintf(&sfp," },\n  { ");
+    myfputs(&sfp," },\n  { ");
 
     for (si = 0; si < len; si++) {
 
@@ -3043,18 +3043,18 @@ static int wrfile(void)
     }
     while (si < Slen) { myfprintf(&sfp,",%*u",si < maxlen ? namwid : 0,0); si++; }
 
-    myfprintf(&sfp," }");
+    myfputs(&sfp," }");
 
     myfprintf(&sfp," }%s\n",se < stablen - 1 ? ",\n" : "");
   }
   myfprintf(&sfp,"};\n\n// max len %u for %u\n#define Syn_maxlen %u\n\n",maxlen,hise,maxlen);
 
-  myfprintf(&sfp,"#undef R0n\n#undef Rlp\n#undef R01\n");
+  myfputs(&sfp,"#undef R0n\n#undef Rlp\n#undef R01\n");
   for (i = 1; i <= higrpdif; i++) {
     myfprintf(&sfp,"#undef R0%u\n",i);
   }
 
-  if (hastidctl) myfprintf(&sfp,"#undef Is0\n#undef Is1\n#undef Idf\n#undef Irf\n");
+  if (hastidctl) myfputs(&sfp,"#undef Is0\n#undef Is1\n#undef Idf\n#undef Irf\n");
 
   ep = syntab + hise;
   rp = rules + ep->nt0;
@@ -3089,12 +3089,12 @@ static int wrfile(void)
     myfputc(&sfp,se < stablen-1 ? ',' : ' ');
     myfprintf(&sfp," // %2u %s\n",se,rp->name);
   }
-  myfprintf(&sfp,"};\n\n");
+  myfputs(&sfp,"};\n\n");
 
   if (lacnt) wrla(&sfp);
 
   if (mrgcnt) {
-    myfprintf(&sfp,"/* mrg sets\n");
+    myfputs(&sfp,"/* mrg sets\n");
 
     for (mrg = 0; mrg < mrgcnt; mrg++) {
       mrgbit = 1U << mrg;
@@ -3104,7 +3104,7 @@ static int wrfile(void)
       }
       myfprintf(&sfp,"  ln %u",mrglnos[mrg]);
     }
-    myfprintf(&sfp,"\n*/\n\n");
+    myfputs(&sfp,"\n*/\n\n");
   }
 
   // prdsel
@@ -3114,8 +3114,8 @@ static int wrfile(void)
 
   ub2 ntok2 = expndx(ntok,ntok >> 2);
 
-  myfprintf(&sfp,"#define x Pcount\n");
-  myfprintf(&sfp,"#define X Pendrep\n");
+  myfputs(&sfp,"#define x Pcount\n");
+  myfputs(&sfp,"#define X Pendrep\n");
   myfprintf(&sfp,"#define Stbl_tklen %u\n",ntok2);
   if (ntok2 != ntok) myfprintf(&sfp,"// from %u\n",ntok);
 
@@ -3205,9 +3205,9 @@ static int wrfile(void)
 
   }
 
-  myfprintf(&sfp,"\n};\n\n");
+  myfputs(&sfp,"\n};\n\n");
 
-  myfprintf(&sfp,"#undef x\n#undef X\n\n");
+  myfputs(&sfp,"#undef x\n#undef X\n\n");
 
   myfprintf(&sfp,"// %2u ve entries",vecnt);
   if (dircnt) myfprintf(&sfp," %2u dir entries",dircnt);
@@ -3223,7 +3223,7 @@ static int wrfile(void)
 
   if (do_transcript == 0) return myfclose(&sfp);
 
-  myfprintf(&sfp,"#if 0\n\n--- transcript of parsed spec ---\n\n");
+  myfputs(&sfp,"#if 0\n\n--- transcript of parsed spec ---\n\n");
 
   for (r = 0; r < nnterm; r++) {
     rp = rules + r;
@@ -3233,12 +3233,12 @@ static int wrfile(void)
     for (a = 0; a < acnt; a++) {
       myfprintf(&sfp,"\n%3u   ",rp->lnos[a]);
       if (rp->rulrep) myfputc(&sfp,rp->rulrep == 1 ? '*' : '+');
-      myfprintf(&sfp,"%.*s",rp->dsclen[a],rp->desc + a * Dsclen);
+      myfwrite(&sfp,rp->desc + a * Dsclen,rp->dsclen[a]);
       if (rp->prdnlen[a]) myfprintf(&sfp,"\t %.*s\n",rp->prdnlen[a],rp->prdnam[a]);
     }
   }
 
-  myfprintf(&sfp,"\n#endif\n");
+  myfputs(&sfp,"\n#endif\n");
 
   return myfclose(&sfp);
 }

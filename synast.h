@@ -45,6 +45,12 @@ struct rnode {
   ub4 ni;
 };
 
+//      Sa_slitid
+#define Sa_slit0 0x20000000
+#define Sa_slit1 0x40000000
+#define Sa_slit2 0x60000000
+#define Sa_slit3 0x80000000
+
 extern int syn(struct lexsyn *lsp,struct synast *sa);
 
 extern void *mkast(struct synast *sa,struct lexsyn *lsp);

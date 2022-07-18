@@ -19,7 +19,7 @@
    If not, see http://www.gnu.org/licenses.
  */
 
-enum Astyp { Aid,Avar,Ailit,Ailitn,Aflit,Aslit,Ailits,Ailitns,Atru,Afal,Akwd,
+enum Astyp { Aid,Avar,Ailit,Aflit,Aslit,Ailits,Atru,Afal,Akwd,
   Aop,
   Asubscr,
   Afstr,
@@ -35,7 +35,7 @@ enum Astyp { Aid,Avar,Ailit,Ailitn,Aflit,Aslit,Ailits,Ailitns,Atru,Afal,Akwd,
   Afstring,
   Arexp,Afstrlst,Aprmlst,Astmtlst,Acount };
 
-enum Packed8 Uop { Onot,Oneg,Oumin,Oupls,Oucnt };
+enum Packed8 Uop { Oupls,Oumin,Onot,Oneg,Oucnt };
 enum Packed8 Bop { Onil,Orelor,Oreland,One,Oeq,Oshl,Oshr,Oxor,Oor,Oand,Oadd,Osub,Omul,Odiv,ODiv,Omod,Omxm,Oexp,Olt,Ogt,Ole,Oge,Obcnt };
 
 #define Aval Aslit

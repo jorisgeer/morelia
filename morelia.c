@@ -42,12 +42,14 @@ static ub4 msgfile = Shsrc_main;
 #include "astyp.h"
 #include "synast.h"
 
+static bool do_chkmem = 0;
+
 struct globs globs;
 
-enum Cmdopt { Co_until=1,Co_prog,Co_emit,Co_runast,Co_include,
+enum Cmdopt { Co_until=1,Co_prog,Co_emit,Co_pretty,Co_runast,Co_include,
   Co_Werror,Co_Wwarn,Co_Winfo,Co_Wtrace };
 
-static ub2 msgopt = Msg_shcoord | Msg_fno | Msg_lno | Msg_col; // | Msg_tim
+static ub2 msgopt = Msg_shcoord | Msg_fno | Msg_lno | Msg_col | Msg_Lvl; // | Msg_tim
 
 #define Incdirs 64
 static const ub1 *incdirs[Incdirs];
@@ -155,7 +157,8 @@ static int domod(void)
 static struct cmdopt cmdopts[] = {
   { "",        'c', Co_prog,    "prog", "program to run as string" },
   { "emit",    ' ', Co_emit,    "%elex,syn,ast,sem","intermediate pass output to emit" },
-  { "runast",  ' ', Co_runast,  nil,    "run aka evaluate ast" },
+  { "pretty-print",'P',Co_pretty,nil,   "pretty print" },
+  { "runast",  ' ', Co_runast,   nil,   "run aka evaluate ast" },
   { "until",   ' ', Co_until,   "%einit,file,lex1,lex,syn,ast", "process until <pass>" },
 
   { "include", 'I', Co_include, "dir",  "add directory to include search path" },
@@ -267,6 +270,7 @@ static int cmdline(int argc, char *argv[])
       case Co_until:  globs.rununtil = coval.uval; break;
       case Co_runast: globs.runast = 1; break;
       case Co_emit:   globs.emit |= (1U << coval.uval); break;
+      case Co_pretty: globs.emit |= 0x8000; break;
       case Co_Werror: diaset(Error,(cchar *)coval.sval); break;
       case Co_Wwarn:  diaset(Warn,(cchar *)coval.sval); break;
       case Co_Winfo:  diaset(Info,(cchar *)coval.sval); break;
@@ -297,7 +301,7 @@ static int init(void)
 
 static void myexit(void)
 {
-  achkfree();
+  if (do_chkmem) achkfree();
   eximsg();
   exios(1);
   eximem(1);

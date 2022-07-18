@@ -33,6 +33,7 @@ struct agen {
 // term aka leaf
 struct ilit {
   ub8 val;
+  ub1 atr;
 };
 
 struct flit {
@@ -150,6 +151,7 @@ struct ast {
   ub4 root;
 
   ub4 *nhs;
+
   struct agen *gens;
 
   struct aid *ids;
