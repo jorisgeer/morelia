@@ -38,7 +38,7 @@ struct expmem {
 struct mempart {
   ub4 nel,siz;
   void *ptr;
-  bool ismmap;
+  ub2 fil;
 };
 
 #define alloc(cnt,el,fil,desc,cntr) (el*)alloc_fln(MFLN,(cnt),sizeof(el),(fil),desc,cntr)

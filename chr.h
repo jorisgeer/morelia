@@ -19,12 +19,14 @@
    If not, see http://www.gnu.org/licenses.
  */
 
+extern ub2 dochprint(ub1 c,ub1 *p);
+extern bool is_print(ub1 c);
 extern cchar *chprint(ub1 c);
-extern const ub1 *chprints(const ub1 *s,ub2 n);
-extern const ub1 *chprintn(const ub1 *s,ub2 n);
+extern const ub1 *chprints(const ub1 *s,ub4 n);
+extern const ub1 *chprintn(const ub1 *s,ub4 n,ub4 *pnw,ub1 ctl);
 extern ub2 underline(char *buf,ub2 len);
 extern char upcase(char c);
 
-enum Packed8 Ctype { Calpha=1,Cnum,Cdot,Cws,Cnl,Chsh,Cpls,Cmin,Cast,Csq,Cdq,Cqst,Ccomma,Crdo,Crdc,Cbs,Cbtk,Cor,Ceq,Cother };
+enum Packed8 Ctype { Csq=1,Cdq,Cbs,Calpha,Cnum,Cdot,Cws,Cnl,Chsh,Cpls,Cmin,Cast,Cqst,Ccomma,Crdo,Crdc,Cbtk,Cor,Ceq,Cother };
 
 extern const enum Ctype Ctab[256];

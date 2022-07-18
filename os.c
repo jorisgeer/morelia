@@ -205,11 +205,12 @@ int osrewind(int fd)
   return (rv == -1 ? 1 : 0);
 }
 
-int oswrite(int fd,const char *buf,ub4 len)
+int oswrite(int fd,const char *buf,ub4 len,ub4 *pnw)
 {
   ssize_t nw = write(fd,buf,len);
-  if (nw < len) { errcnt++; return 1; }
-  else return 0;
+  if (nw < len) errcnt++;
+  if (pnw) *pnw = max(nw,0);
+  return nw;
 }
 
 int oswrite8(int fd, const char *buf,size_t len,unsigned long *nwrit)
@@ -274,6 +275,19 @@ int osclose(int fd)
   return close(fd);
 }
 
+ub4 osseek(int fd,ub4 ofs,int org)
+{
+  int o;
+
+  switch (org) {
+  case 0: o = SEEK_SET; break;
+  case 1: o = SEEK_CUR; break;
+  case 2: o = SEEK_END; break;
+  default: return 0;
+  }
+  return lseek(fd,ofs,o);
+}
+
 int osremove(const char *name)
 {
   return unlink(name);
@@ -299,7 +313,7 @@ char *getoserr(ub4 *perrno)
 
 static void wrstderr(const char *buf,ub4 len)
 {
-  oswrite(2,buf,len);
+  oswrite(2,buf,len,nil);
 }
 
 void *osmmapfd(ub8 len,int fd)
@@ -376,14 +390,14 @@ void *osmremapfln(ub4 fln,void *p,size_t elsiz,ub4 oldel,ub4 newel)
   return np;
 }
 
-int osmunmapfln(ub4 fln,void *p,size_t len)
+int osmunmapfln(ub4 fln,const void *p,size_t len)
 {
   int rv = 0;
 
   if (p == nil) fatal(fln,"nil munmap for len %lu",len);
 
 #ifdef _GNU_SOURCE
-  rv = munmap(p,len);
+  rv = munmap((void *)p,len);
 #else
   free(p);
 #endif

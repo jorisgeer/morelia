@@ -99,6 +99,8 @@ const enum Ctype Ctab[256] = {
 
   [' '] = Cws,
   ['\t'] = Cws,
+  ['\f'] = Cws,
+  ['\r'] = Cws,
   ['\n'] = Cnl,
   ['\\'] = Cbs,
   ['\''] = Csq,
@@ -138,14 +140,14 @@ const enum Ctype Ctab[256] = {
   [';'] = Cother,
 };
 
-static ub2 dochprint(ub1 c,ub1 *p)
+ub2 dotprint(enum Ctype t,ub1 c,ub1 *p)
 {
   if (c == 0) {
     p[0] = '\\';
     p[1] = '0';
     return 2;
-  } else if (Ctab[c] == 0) {
-    p[0] = '0';
+  } else if (t == 0) {
+    p[0] = '\\';
     p[1] = 'x';
     p[2] = hextab[c >> 4];
     p[3] = hextab[c & 0xf];
@@ -154,13 +156,23 @@ static ub2 dochprint(ub1 c,ub1 *p)
     c = esctab[c - 7];
     p[0] = '\\'; p[1] = c;
     return 2;
-  } else if (c == '\\') {
+  } else if (t <= Cbs) {
     p[0] = '\\'; p[1] = c;
     return 2;
   } else {
     *p = c;
     return 1;
   }
+}
+
+ub2 dochprint(ub1 c,ub1 *p)
+{
+  return dotprint(Ctab[c],c,p);
+}
+
+bool is_print(ub1 c)
+{
+  return (Ctab[c] && c >= 0x0e && c != '\\');
 }
 
 cchar *chprint(ub1 c)
@@ -178,13 +190,13 @@ cchar *chprint(ub1 c)
   return (cchar *)p;
 }
 
-const ub1 *chprints(const ub1 *s,ub2 n)
+const ub1 *chprints(const ub1 *s,ub4 n)
 {
-  ub4 pos=0,len = min(252,n);
+  ub4 i=0,pos=0,top = 252;
   ub1 c;
   static ub1 buf[256];
 
-  while ( (c=*s++) && pos < len ) {
+  while (i < n && (c=s[i++]) && pos < top) {
     if (Ctab[c] && c >= ' ') buf[pos++] = c;
     else pos += dochprint(c,buf+pos);
   }
@@ -192,18 +204,37 @@ const ub1 *chprints(const ub1 *s,ub2 n)
   return buf;
 }
 
-const ub1 *chprintn(const ub1 *s,ub2 n)
+const ub1 *chprintn(const ub1 *s,ub4 n,ub4 *pnw,ub1 ctl)
 {
-  ub4 pos=0,len = min(252,n);
-  ub1 c;
-  static ub1 buf[256];
+  ub4 i=0,pos=0;
+  ub1 c,xq;
+  ub4 top = 4096 - 8;
+  enum Ctype t;
+  ub1 islong = ctl & 16;
+  static ub1 buf[4096];
 
-  while (pos < len ) {
-    c = *s++;
-    if (Ctab[c] && c >= ' ') buf[pos++] = c;
-    else pos += dochprint(c,buf+pos);
+  xq = (ctl & 8) ? '\'' : '"';
+
+  while (i < n && pos < top) {
+    c = s[i++];
+    t=Ctab[c];
+    if (c == xq || (c >= 0x0e && t > Cbs) || (islong && c == '\n') ) buf[pos++] = c;
+    else pos += dotprint(t,c,buf+pos);
   }
+  if (i + 8 < n) {
+    buf[pos++] = '.';
+    buf[pos++] = '.';
+    buf[pos++] = '.';
+    i = n - 8;
+    do {
+      c = s[i++];
+      if (Ctab[c] && c >= ' ') buf[pos++] = c;
+      else pos += dochprint(c,buf+pos);
+    } while (i < n);
+  }
+
   buf[pos] = 0;
+  if (pnw) *pnw = pos;
   return buf;
 }
 

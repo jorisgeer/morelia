@@ -63,6 +63,7 @@ static ub2 elsizes[Memdesc * (Shsrc_mem+1)];
 
 struct ainfo {
   const void *ptr;
+  ub4 len;
   ub2 allocanchor;
   ub2 freeanchor;
 };
@@ -102,14 +103,20 @@ static ub8 ptrhash(ub8 key)
   return key;
 }
 
-static ub4 align4(ub4 fln,ub4 x,ub4 a)
+static ub4 align4(ub4 fln,ub4 x,ub4 a,cchar *dsc)
 {
   ub4 r;
 
-  if (a == 0) ice(fln,hi32,"zero align for %u",x);
-  r = x & ~(a-1);
-
-  return (r == x ? r : r + a);
+  switch (a) {
+  case 0: ice(fln,hi32,"zero align for %u",x);
+  case 1: return x;
+  case 2: return x & 1 ? x+1 : x;
+  default:
+    if (a & (a-1)) ice(fln,hi32,"align %u not power of two for %s",a,dsc);
+    else if (a > maxalign) ice(fln,hi32,"align %u above %u for %s",a,maxalign,dsc);
+    r = x & ~(a-1);
+    return (r == x ? r : r + a);
+  }
 }
 
 // mini alloc for small, nonfreeable blocks
@@ -135,7 +142,7 @@ void *minalloc_fln(ub4 fln,ub4 n,ub2 align,ub2 fill,cchar *dsc)
   else if (n == 0) fatal(fln,"zero len for '%s'",dsc);
   else if (mintot + n > Minmax) fatal(fln,"mini pool exceeds %u MB %s",Minmax >> 20,dsc);
 
-  minpos = align4(fln,minpos,align);
+  minpos = align4(fln,minpos,align,dsc);
   if (minpool == nil) inc = Minchk;
   else if (minpos + n >= mintop) {
     inc = (n < Minchk ? Minchk : Minchk * 2);
@@ -149,7 +156,7 @@ void *minalloc_fln(ub4 fln,ub4 n,ub2 align,ub2 fill,cchar *dsc)
     addsum(inc);
   }
   p = (ub1 *)minpool + minpos;
-  if (fill <= 0xff) memset(p,fill,n);
+  if (fill <= 0xff) { vrbo("mem.%u set %x",__LINE__,fill); memset(p,fill,n); }
   minpos += n;
   return p;
 }
@@ -168,7 +175,7 @@ void *medalloc_fln(ub4 fln,ub4 n,ub2 align,cchar *dsc)
   if (n >= (1U << 26)) fatal(fln,"medalloc %u`B %s",n,dsc);
   else if (n == 0) fatal(fln,"zero len %s",dsc);
 
-  medpos = align4(fln,medpos,align);
+  medpos = align4(fln,medpos,align,dsc);
   if (medpool == nil || medpos + n >= medchk) {
     if (medchk <= (1U << 20)) medchk++;
     nn = max(medchk,n);
@@ -228,10 +235,10 @@ static struct ainfo *getai(const void *p,bool ismmap,bool add)
   return nil;
 }
 
-ub4 chkfree(bool ismmap)
+static ub4 chkfree(bool ismmap)
 {
   struct ainfo *ai,*aibas;
-  ub4 a,len,n=0;
+  ub4 a,len,n,cnt=0;
   ub4 y;
   ub2 allan;
 
@@ -247,19 +254,19 @@ ub4 chkfree(bool ismmap)
     ai = aibas + a;
     if (ai->ptr && ai->freeanchor == hi16) {
       allan = ai->allocanchor;
-      n++;
+      cnt++;
       y = elsizes[allan];
-      warnfln(flns[allan],"mem.%u unfreed %s blk n * %u` '%s'",__LINE__,ismmap ? "mmap" : "malloc",y,descs[allan]);
+      n = ai->len;
+      if (n > 8192) warnfln(flns[allan],"mem.%u unfreed %clk %u`B '%s'",__LINE__,ismmap ? 'B' : 'b',n,descs[allan]);
     }
   }
-  return n;
+  return cnt;
 }
 
 void achkfree(void)
 {
-  ub4 n = chkfree(0) + chkfree(1);
-
-  showcnt("unfreed block",n);
+  showcnt("unfreed block",chkfree(0));
+  showcnt("unfreed Block",chkfree(1));
 }
 
 void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter)
@@ -305,22 +312,20 @@ void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter
     fatal(fln,"exceeding %u MB limit by %u+%u=%u MB %s",Maxmem_mb,totalmb,nm,nm + totalmb,desc);
   }
 
-  nn = align4(fln,n,align);
+  nn = align4(fln,n,align,desc);
   addsum(nn);
-  if (nn + 4 >= mmap_thres) {
+  if (nn >= mmap_thres) {
     ismmap = 1;
     infofln(fln,"mem.%u Alloc %u`B %s",__LINE__,nn,desc);
     p = osmmap(nn,ub1);
     if (!p) fatal(fln,"cannot alloc %u`B, total %u MB for %s: %m",nn,totalmb,desc);
-    *(ub4 *)p = nn;
-    p += align4(fln,4,align);
-    if (fil && fil < Mnofil) memset(p,fil,n);
+    if (fil && fil < Mnofil) { info("mem.%u set %x",__LINE__,fil); memset(p,fil,nn); }
   } else {
     ismmap = 0;
-    vrbfln(fln,"mem.%u alloc %u`B %s",__LINE__,n,desc);
-    p = malloc(n);
-    if (!p) fatal(fln,"cannot alloc %u`B, total %u MB for %s: %m", n,totalmb,desc);
-    if (fil < Mnofil) memset(p,fil,n);
+    vrbfln(fln,"mem.%u alloc %u`B %s",__LINE__,nn,desc);
+    p = malloc(nn);
+    if (!p) fatal(fln,"cannot alloc %u`B, total %u MB for %s: %m", nn,totalmb,desc);
+    if (fil < Mnofil) { info("mem.%u set %x",__LINE__,fil); memset(p,fil,nn); }
     x8 = (ub8)p & pagemask;
     if (x8 <= maxalign) return p; // not freed
   }
@@ -337,17 +342,25 @@ void *alloc_fln(ub4 fln,ub4 nelem,ub4 elsiz,ub2 fil,const char *desc,ub2 counter
   if ( (n = elsizes[allan]) && n != elsiz) fatal(fln,"elsize %u vs %u %s",n,elsiz,desc);
   elsizes[allan] = elsiz;
 
+  ai->len = nn;
   ai->allocanchor = allan;
   ai->freeanchor = hi16;
 
   return p;
 }
 
+static inline bool is_mmapped(ub8 p)
+{
+  p &= pagemask;
+
+  return (p <= maxalign);
+}
+
 void afree_fln(ub4 fln,const void *p,const char *desc,ub2 counter)
 {
   struct ainfo *ai;
   ub4 elsiz;
-  ub4 n;
+  ub4 len;
   ub8 x8;
   ub2 allan,freean,anchor,mod;
   bool ismmap;
@@ -356,17 +369,16 @@ void afree_fln(ub4 fln,const void *p,const char *desc,ub2 counter)
 
   if (!p) { errorfln(fln,FLN,"free nil pointer for %s",desc); return; }
   x8 = (ub8)p;
-  if (x8 & minalignmask) return; // min
+  if (x8 & minalignmask) return; // minpool
 
-  x8 &= pagemask;
-
-  ismmap = (x8 <= maxalign);
+  ismmap = is_mmapped(x8);
 
   ai = getai(p,ismmap,0);
   if (ai) {
     freean = ai->freeanchor;
     allan = ai->allocanchor;
     elsiz = elsizes[allan];
+    len   = ai->len;
 
     if (freean != hi16) {
       infofln(flns[freean],"mem.%u location of previous free",__LINE__);
@@ -384,12 +396,9 @@ void afree_fln(ub4 fln,const void *p,const char *desc,ub2 counter)
     ai->freeanchor = anchor;
   } else return;
 
+  subsum(len);
   if (ismmap) {
-    x8 &= ~x8;
-    p = (void *)x8;
-    n = *(ub4 *)p;  // obtain len
-    osmunmap(p,n);
-    subsum(n);
+    osmunmap(p,len);
   } else free((void *)p);
 }
 
@@ -403,8 +412,10 @@ void *allocset_fln(ub4 fln,struct mempart *parts,ub2 npart,ub2 fil,const char *d
   ub4 len=0,len2;
   ub4 nel,siz;
   ub2 align,align0=1;
+  ub2 f;
   ub2 part;
-  char *bas;
+  char *bas,*p;
+  bool ismmap;
 
   for (part = 0; part < npart; part++) {
     nel = parts[part].nel;
@@ -414,21 +425,26 @@ void *allocset_fln(ub4 fln,struct mempart *parts,ub2 npart,ub2 fil,const char *d
     align = min(siz,16);
     if (len == 0) {
       align0 = align;
-    } else len = align4(fln,len,align);
+    } else len = align4(fln,len,align,desc);
     len += nel * siz;
   }
 
   len2 = (len + align0) / align0;
   bas = alloc_fln(fln,len2,align0,fil,desc,counter);
-  parts[0].ismmap = (len2 * align0) >= mmap_thres;
+  ismmap = is_mmapped((ub8)bas);
+
   len = 0;
   for (part = 0; part < npart; part++) {
     nel = parts[part].nel;
     if (nel == 0) continue;
     siz = parts[part].siz;
     align = min(siz,16);
-    len = align4(fln,len,align);
-    parts[part].ptr = bas+len;
+    len = align4(fln,len,align,desc);
+    parts[part].ptr = p = bas+len;
+    f = parts[part].fil;
+    if (fil == Mnofil && f != Mnofil) {
+      if (f || ismmap == 0) memset(p,f,nel * siz);
+    }
     len += nel * siz;
   }
   return bas;

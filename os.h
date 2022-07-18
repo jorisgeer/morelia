@@ -41,12 +41,13 @@ extern int osopenseq(const char *name,int *pfd);
 extern int osappend(const char *name);
 
 extern int osread(int fd,char *buf,ub4 len,ub4 *nread);
-extern int oswrite(int fd, const char *buf,ub4 len);
+extern int oswrite(int fd, const char *buf,ub4 len,ub4 *pnw);
 extern int osread8(int fd,char *buf,ub8 len,unsigned long *nread);
 extern int oswrite8(int fd, const char *buf,ub8 len,unsigned long *nwrit);
 
 extern int oscreate(const char *name);
 extern int osclose(int fd);
+extern ub4 osseek(int fd,ub4 ofs,int org);
 
 extern int osfdinfo(struct osstat *mf,int fd);
 extern ub8 osfiltim(cchar *nam);
@@ -64,7 +65,7 @@ extern Noret void doexit(int code);
 extern void *osmmapfln(ub4 fln,ub8 nel,ub8 elsiz);
 extern void *osmmapfd(ub8 len,int fd);
 extern void *osmremapfln(ub4 fln,void *p,ub8 elsiz,ub4 oldel,ub4 newel);
-extern int osmunmapfln(ub4 fln,void *p,ub8 len);
+extern int osmunmapfln(ub4 fln,const void *p,ub8 len);
 
 // extern int osmemrdonly(void *p,size_t len);
 // extern int osmlock(void);

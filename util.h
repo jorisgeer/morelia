@@ -38,9 +38,11 @@ struct cmdval { // matched commandline arg
 
 struct bufile {
   cchar *nam;
-  int fd;
   ub1 *buf;
-  ub4 pos,mid,top;
+  int fd;
+  ub4 pos,top;
+  ub4 len;
+  ub4 fln;
   ub1 dobck;
   bool perm,err;
 };
@@ -69,10 +71,10 @@ extern int readpath(struct myfile *mf,const char *dir,const char *name, int must
 extern int freefile(struct myfile *mf);
 extern int filebck(cchar *name);
 
-extern void myfopen(struct bufile *f,ub4 len,bool perm);
-extern ub4 myfwrite(struct bufile *f,ub1 *src,ub4 n);
+extern void myfopen(ub4 fln,struct bufile *f,ub4 len,bool perm);
+extern ub4 myfwrite(struct bufile *f,const ub1 *src,ub4 n);
 extern void myfputc(struct bufile *f,ub1 c);
-extern void myfputs(struct bufile *f,cchar *s,ub2 len);
+extern void myfputs(struct bufile *f,cchar *s);
 extern ub4 myfprintf(struct bufile *f,const char *fmt,...) __attribute__ ((format (printf,2,3)));
 extern int myfclose(struct bufile *f);
 

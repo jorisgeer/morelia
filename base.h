@@ -187,7 +187,8 @@ struct globs {
   bool resusg;
 
   bool runast;
-  ub2 emit,log;
+  ub2 emit;
+  ub2 log; // unset
 
   ub2 msglvl;
 

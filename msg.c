@@ -51,6 +51,7 @@ static inline ub4 strlen4(cchar *s) { return (ub4)strlen(s); }
 static enum Msglvl msglvl = Info;
 static enum Msgopts orgopts,msgopts = Msg_shcoord; // | Msg_tim;
 static bool nobuffer = 0;
+static bool ena_color;
 
 static int ttyfd = 1;
 static int logfd = -1;
@@ -59,7 +60,8 @@ static ub8 T0;
 
 static ub4 warncnt,errcnt,assertcnt,oserrcnt;
 
-#define Msglen 1024
+#define Msglen 2048
+#define Msgbuf 8192
 
 ub4 msgwarncnt(void) { return warncnt; }
 
@@ -70,29 +72,31 @@ ub4 msgerrcnt(void)
   return cnt;
 }
 
+static void os_write(int fd,cchar *buf,ub4 len) { oswrite(fd,buf,len,nil); }
+
 static void dowritefd(int fd,const char *buf,ub4 len)
 {
   int rv;
 
-  if (len == 0) { oswrite(fd,"\nnil msg\n",9); return; }
+  if (len == 0) { os_write(fd,"\nnil msg\n",9); return; }
 
   ub4 i,prvi=0;
 
-#if 1
+#if 0
   for (i = 0; i < len; i++) {
     if (buf[i] == 0)  {
-      if (prvi < i) oswrite(fd,buf+prvi,i - prvi);
+      if (prvi < i) os_write(fd,buf+prvi,i - prvi);
       prvi = i+1;
-      oswrite(fd," \\x00 ",6);
+      os_write(fd," \\x00 ",6);
     }
   }
   if (prvi >= len) return;
 #endif
 
-  rv = oswrite(fd,buf+prvi,len-prvi);
+  rv = oswrite(fd,buf+prvi,len-prvi,nil);
 
-  if (rv) {
-    oswrite(2,"\nI/O error on msg write\n",24);
+  if (rv < 0) {
+    os_write(2,"\nI/O error on msg write\n",24);
     oserrcnt++;
   }
 }
@@ -105,8 +109,8 @@ static void dowrite(const char *buf,ub4 len)
 
 static ub4 msgseq,errseq,warnseq;
 
-static char msgbuf[8192];
-static ub4 bufpos,buftop = 8192;
+static char msgbuf[Msgbuf];
+static ub4 bufpos,buftop = Msgbuf;
 
 static char lastwarn[128];
 static char lasterr[128];
@@ -262,8 +266,9 @@ static void msgps(ub4 shfln,enum Msglvl lvl,cchar *srcnam,ub4 lno,ub4 col,cchar 
   if (shfln && shfln != hi32 && (msgopts & Msg_shcoord)) pos += mysnprintf(buf,pos,maxlen,"%7s.%-4u ",shfnam,shlno);
 
   if (msgopts & Msg_Lvl) {
-    if (lvl < Info) pos += mysnprintf(buf,pos,maxlen,Clr0 "%c" Clr1 " ",lvlclr[lvl],*lvlnam);
-    else { buf[pos++] = *lvlnam; buf[pos++] = ' '; }
+    if (lvl < Info && ena_color) pos += mysnprintf(buf,pos,maxlen,Clr0 "%c" Clr1,lvlclr[lvl],*lvlnam);
+    else buf[pos++] = *lvlnam;
+    buf[pos++] = ' ';
   }
 
   if (lvl < Info || (msgopts & Msg_lvl)) pos += mysnprintf(buf,pos,maxlen,"%-8s`z ",lvlnam);
@@ -341,13 +346,13 @@ void msglog(cchar *fnam,cchar *fext,cchar *desc)
     osclose(logfd);
     logfd = -1;
     info("done emitting %s intermediate code",desc);
+    flsbuf();
   }
   if (fnam == nil || *fnam == 0) {
     return;
   }
 
   fmtstring(path,"%s.%s",fnam,fext);
-
   filebck(path);
 
   info("emitting %s intermediate code in %s",desc,path);
@@ -446,7 +451,7 @@ static const char *getsrcpos(ub4 fpos,ub4 *plno,ub4 *pcol,ub4 *pparfpos)
   if (lntab == nil || linonly) { *plno = fpos; return sp->path + sp->incdir; } // pass line numbers directly if no lntab
 
   if (pos > len) {
-    warnfln(FLN,"invalid pos %u above %u",pos,len);
+    warnfln(FLN,"invalid pos %u.%4x above %u",pos,pos,len);
     pos = len;
   }
   if (lncnt < 2) lno = 0;
@@ -696,13 +701,20 @@ ub4 limit_gt_fln(ub4 x,ub4 lim,ub4 arg,const char *sx,const char *slim,const cha
 void showcntfln(ub4 fln,cchar *nam,ub4 cnt)
 {
   ub2 n = 0;
+  ub4 pos;
   char c;
+  cchar * plr;
+  char buf[256];
 
-  if (cnt == 0 || nam == nil || (c = *nam) == 0) return;
-
-  if (c >= '0' && c <= '9') n = (ub2)(*nam++ - '0');
-  if (*nam == '#') infofln(fln,"%*u` %s",n,cnt,nam+1);
-  else infofln(fln,"%*u` %s%.*s",n,cnt,nam,cnt != 1,"s");
+  if (nam == nil) nam = "(nil)";
+  c = *nam;
+  if (c == '#') { plr = ""; c = *++nam; }
+  else plr = "s";
+  if (cnt == 0 && c != '0') return;
+  if (c >= '0' && c <= '9') { n = c - '0'; nam++; }
+  pos = mysnprintf(buf,0,256,"%*u %s%.*s",n,cnt,nam,cnt != 1,plr);
+  if (cnt > 99999) pos += mysnprintf(buf,pos,256," (%u`)",cnt);
+  infofln(fln,"%s",buf);
 }
 
 void showsizfln(ub4 fln,cchar *nam,ub4 siz)

@@ -59,7 +59,7 @@ ub4 nxpwr2(ub4 x,ub1 *pbit)
   if (x > 0x80000000) return hi32;
 
   while ( (1U << bit) < x) bit++;
-  *pbit = bit;
+  if (pbit) *pbit = bit;
   return 1U << bit;
 }
 

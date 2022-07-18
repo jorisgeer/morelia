@@ -110,7 +110,7 @@ int filewritefln(ub4 fln,int fd, const void *buf,ub8 len,const char *name)
     oserrorfln(fln,"cannot write %lu` bytes to %s",len,name);
     return 1;
   }
-  else if (n != (long)len) {
+  else if (n < (long)len) {
    osclose(fd);
    errorfln(fln,FLN,"partial write %ld` of %lu` bytes to %s",n,len,name);
    return 1;
@@ -493,11 +493,13 @@ int readpath(struct myfile *mf,const char *dir,const char *name, int mustexist,u
 }
 #endif
 
-static ub4 myflush(struct bufile *f,ub4 n,bool eof)
+#define Blksiz 4096
+
+static int myflush(struct bufile *f,ub4 n,bool eof)
 {
   int fd = f->fd;
   struct myfile mf;
-  ub4 len;
+  ub4 len,nw;
   cchar *p;
 
   if (n == 0 || f->err) return 0;
@@ -519,115 +521,122 @@ static ub4 myflush(struct bufile *f,ub4 n,bool eof)
     if (fd == -1) { f->err = 1; return 0; }
     f->fd = fd;
   }
-  if (oswrite(fd,f->buf,n)) f->err = 1;
-  return n;
+  oswrite(fd,f->buf,n,&nw);
+  f->len += n;
+  if (nw < n) f->err = 1;
+  return nw;
 }
 
 // creates file at first buffer flush
-void myfopen(struct bufile *f,ub4 len,bool perm)
+void myfopen(ub4 fln,struct bufile *f,ub4 len,bool perm)
 {
   ub1 bit;
 
-  len = nxpwr2(min(len,1U << 20),&bit);
-  if (len > 16) len -= 16;
-  f->mid = len;
+  if (f->nam == nil || *f->nam == 0) ice(fln,hi32,"nil filename for len %u",len);
+  len = max(len,2 * Blksiz);
+  len = min(len,hi20);
+  len = nxpwr2(len,&bit);
 
-  len *= 2;
   f->top = len;
+  f->pos = 0;
+  f->len = 0;
+  f->fln = fln;
 
   f->perm = perm;
-  f->buf = alloc(len,ub1,Mnofil,f->nam,nextcnt);
-  f->fd = -1;
+  if (perm && len <= 16384) f->buf = medalloc(len,8,f->nam);
+  else f->buf = alloc(len,ub1,Mnofil,f->nam,nextcnt);
+  // memset(f->buf,0x55,len);
+  f->fd = -1; f->err = 0;
 }
 
-ub4 myfwrite(struct bufile *f,ub1 *src,ub4 n)
+ub4 myfwrite(struct bufile *f,const ub1 *src,ub4 n)
 {
+  if (n == 0) return 0;
+  else if (n == 1) { myfputc(f,*src); return 1; }
+
   ub4 pos = f->pos;
-  ub4 mid = f->mid;
   ub4 top = f->top;
-  ub4 nw;
+  ub4 nn,nw;
+  int rv;
   ub1 *buf = f->buf;
 
-  if (buf == nil) ice(0,hi32,"write to unopened %s",f->nam);
+  if (buf == nil) ice(f->fln,hi32,"write to unopened %s",f->nam);
 
-  if (pos >= mid) {
-    n = myflush(f,mid,0);
-    if (f->err) return n;
-    n = pos - mid;
-    if (n) memcpy(buf,f->buf + mid,n);
-    pos = n;
+  if (pos + n > top) {
+    nn = top - pos;
+    if (nn) { memcpy(buf+pos,src,nn); n -= nn; src += nn; }
+    myflush(f,top,0);
+    pos = 0;
+    if (f->err) return nn;
+    if (n >= Blksiz) {
+      nn = n & ~(Blksiz-1);
+      rv = oswrite(f->fd,buf,nn,&nw);
+      f->len += nn;
+      n -= nn; src += nn;
+    }
   }
-  nw = min(n,top - pos - 4);
-  memcpy(buf + pos,src,nw);
-  f->pos = pos;
-
+  if (n) {
+    memcpy(buf + pos,src,n);
+  }
+  f->pos = pos + n;
   return nw;
 }
 
 void myfputc(struct bufile *f,ub1 c)
 {
   ub4 pos = f->pos;
-  ub4 mid = f->mid;
-  ub4 n;
+  ub4 top = f->top;
   ub1 *buf = f->buf;
+  ub4 n;
 
-  if (buf == nil) ice(0,hi32,"write to unopened %s",f->nam);
+  if (buf == nil) ice(f->fln,hi32,"write to unopened %s",f->nam);
 
-  if (pos >= mid) {
-    myflush(f,mid,0);
+  if (pos == top) {
+    myflush(f,pos,0);
     if (f->err) return;
-    n = pos - mid;
-    if (n) memcpy(buf,f->buf + mid,n);
-    pos = n;
+    pos = 0;
   }
   buf[pos] = c;
   f->pos = pos + 1;
 }
 
-void myfputs(struct bufile *f,cchar *s,ub2 len)
+void myfputs(struct bufile *f,cchar *s)
 {
-  ub4 pos = f->pos;
-  ub4 mid = f->mid;
-  ub4 n;
-  ub1 *buf = f->buf;
+  ub4 len;
 
-  if (buf == nil) ice(0,hi32,"write to unopened %s",f->nam);
+  if (s == nil) ice(f->fln,hi32,"write from nil string to %s",f->nam);
+  if (f->err || *s == 0) return;
+  else if (s[1] == 0) { myfputc(f,*s); return; }
 
-  if (pos >= mid) {
-    myflush(f,mid,0);
-    if (f->err) return;
-    n = pos - mid;
-    if (n) memcpy(buf,f->buf + mid,n);
-    pos = n;
-  }
-  if (len > mid) len = mid;
-  memcpy(buf + pos,s,len);
-  f->pos = pos + len;
+  len = strlen(s);
+  myfwrite(f,s,len);
 }
 
 ub4 __attribute__ ((format (printf,2,3))) myfprintf(struct bufile *f,const char *fmt,...)
 {
   va_list ap;
-  ub4 n,nn;
+  ub4 n,nn,dn;
   ub4 pos = f->pos;
-  ub4 mid = f->mid;
   ub4 top = f->top;
   ub1 *buf = f->buf;
 
-  if (buf == nil) ice(0,hi32,"write to unopened %s",f->nam);
+  if (buf == nil) ice(f->fln,hi32,"write to unopened %s",f->nam);
 
-  if (fmt == nil || *fmt == 0 || f->err) return 0;
+  if (fmt == nil) ice(f->fln,hi32,"write from nil string to %s",f->nam);
+  if (*fmt == 0 || f->err) return 0;
 
-  if (pos >= mid) {
-    n = myflush(f,mid,0);
+  n = top - pos;
+  if (n < Blksiz) {
+    nn = pos & ~(Blksiz-1);
+    myflush(f,nn,0);
     if (f->err) return n;
-    n = pos - mid;
-    if (n) memcpy(buf,f->buf + mid,n);
-    pos = n;
+    dn = pos - nn;
+    if (dn) { memcpy(buf,buf + nn,dn); pos = dn; }
+    else pos = 0;
   }
 
-  va_start(ap, fmt);
-  nn = myvsnprint(buf+pos,0,top-pos-4,fmt,ap);
+  va_start(ap,fmt);
+  nn = myvsnprint(buf+pos,0,top-pos,fmt,ap);
   va_end(ap);
   f->pos = pos + nn;
   return nn;
