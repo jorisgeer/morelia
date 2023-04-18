@@ -1,0 +1,16 @@
+== Introduction
+   Morelia is a variation on a Python theme.
+
+== Status
+   Starting
+
+== Building
+
+=== Recommended
+  Run
+    build.sh
+  in the repository root.
+
+=== Custom
+  Building can be as simple as
+    cc -o morelia *.c -lm
